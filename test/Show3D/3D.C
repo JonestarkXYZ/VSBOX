@@ -103,15 +103,15 @@ int main() {
     int gd = DETECT, gm;
     initgraph(&gd, &gm, "C:\\Turboc3\\BGI");
 
-    loadModel("C:\\models\\model1.txt");
+    loadModel("C:\\test\\Show3D\\models\\model1.txt");
     drawModel(WHITE);
-    loadModel("C:\\models\\model2.txt");
+    loadModel("C:\\test\\Show3D\\models\\model2.txt");
     drawModel(RED);
-    loadModel("C:\\models\\model3.txt");
+    loadModel("C:\\test\\Show3D\\models\\model3.txt");
     drawModel(GREEN);
-    loadModel("C:\\models\\model4.txt");
+    loadModel("C:\\test\\Show3D\\models\\model4.txt");
     drawModel(BLUE);
-    loadModel("C:\\models\\model5.txt");
+    loadModel("C:\\test\\Show3D\\models\\model5.txt");
     drawModel(YELLOW);
     
     setcolor(RED);

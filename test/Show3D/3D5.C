@@ -19,7 +19,7 @@ int main() {
     struct Vec3 vertices[MAX_VERTICES];
     int i;
 
-    archivo = fopen("C:\\models\\model1.txt", "r");
+    archivo = fopen("C:\\test\\Show3D\\models\\model1.txt", "r");
     if (!archivo) {
         printf("Error: no se pudo abrir el modelo\n");
         getch();

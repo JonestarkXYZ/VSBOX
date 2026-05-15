@@ -182,7 +182,7 @@ int loadModelByName(struct Model *model, char *fileName) {
     strcpy(paths[3], "C:\\TEST\\IA_EXA~1\\MODELS\\");
     strcat(paths[3], fileName);
 
-    strcpy(paths[4], "C:\\models\\");
+    strcpy(paths[4], "C:\\TEST\\IA_EXA~1\\MODELS\\");
     strcat(paths[4], fileName);
 
     for (i = 0; i < 5; i++) {
@@ -504,7 +504,7 @@ int main() {
     clearModel(&ship);
     if (!loadShipModel(&ship)) {
         printf("No se pudo abrir test\\IA_EXAMPLES\\models\\NAVE.TXT\n");
-        printf("Tambien puedes copiar NAVE.TXT a C:\\models\\NAVE.TXT\n");
+        printf("Verifica test\\IA_EXAMPLES\\models\\NAVE.TXT\n");
         printf("Presiona una tecla para salir...");
         getch();
         return 1;
@@ -513,7 +513,7 @@ int main() {
     clearModel(&bulletModel);
     if (!loadBulletModel(&bulletModel)) {
         printf("No se pudo abrir test\\IA_EXAMPLES\\models\\DISPARO.TXT\n");
-        printf("Tambien puedes copiar DISPARO.TXT a C:\\models\\DISPARO.TXT\n");
+        printf("Verifica test\\IA_EXAMPLES\\models\\DISPARO.TXT\n");
         printf("Presiona una tecla para salir...");
         getch();
         return 1;

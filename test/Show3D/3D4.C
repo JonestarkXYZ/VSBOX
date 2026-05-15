@@ -8,7 +8,7 @@ int main() {
     char palabra[20];
     int cantidad = 0;
 
-    archivo = fopen("C:\\models\\model1.txt", "r");
+    archivo = fopen("C:\\test\\Show3D\\models\\model1.txt", "r");
     if (!archivo) {
         printf("No se pudo abrir el modelo\n");
         getch();

@@ -6,7 +6,7 @@ int main() {
     FILE* archivo;
     float numero;
 
-    archivo = fopen("C:\\models\\model1.txt", "r");
+    archivo = fopen("C:\\test\\Show3D\\models\\model1.txt", "r");
     if (!archivo) {
         printf("No se pudo abrir el modelo\n");
         getch();  // Esperar tecla para no cerrar
