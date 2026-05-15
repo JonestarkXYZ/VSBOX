@@ -48,15 +48,67 @@ SOURCE_NAME="${SOURCE_BASE%.*}"
 SOURCE_EXT=".${SOURCE_BASE##*.}"
 STAGED_DIR="$ROOT_DIR/TURBOC3/BUILD"
 STAGED_PATH="$STAGED_DIR/$SOURCE_NAME$SOURCE_EXT"
+SELECTOR_SOURCE="$ROOT_DIR/projects/FSSELECT/FSSEL.C"
+SELECTOR_EXE="$STAGED_DIR/FSSEL.EXE"
+SELECTOR_CFG="$ROOT_DIR/TURBOC3/FULLSCR.CFG"
+SELECTOR_BUILD_LOG="$ROOT_DIR/logs/FSSELECT_BUILD.TXT"
+
+if [ ! -f "$SELECTOR_SOURCE" ]; then
+    echo "Error: falta el selector de pantalla: $SELECTOR_SOURCE"
+    exit 2
+fi
 
 # Instalar el BAT versionado dentro del toolchain local y preparar ruta corta.
 mkdir -p "$STAGED_DIR"
+mkdir -p "$ROOT_DIR/logs"
 cp "$ROOT_DIR/tools/RUN.BAT" "$ROOT_DIR/TURBOC3/BIN/RUN.BAT"
 cp "$SOURCE_FULL_PATH" "$STAGED_PATH"
 
+# El selector es una herramienta auxiliar: no usa RUN.BAT ni compila el archivo activo.
+if [ ! -f "$SELECTOR_EXE" ] || [ "$SELECTOR_SOURCE" -nt "$SELECTOR_EXE" ]; then
+    echo "DOSBox: compilando selector de pantalla"
+    dosbox -noconsole \
+        -c "mount c \"$ROOT_DIR\"" \
+        -c "c:" \
+        -c "cd TURBOC3\\BIN" \
+        -c "TCC.EXE -IC:\\TURBOC3\\INCLUDE -LC:\\TURBOC3\\LIB -nC:\\TURBOC3\\BUILD C:\\projects\\FSSELECT\\FSSEL.C" \
+        -c "exit" >"$SELECTOR_BUILD_LOG" 2>&1
+fi
+
+if [ ! -f "$SELECTOR_EXE" ]; then
+    echo "Error: no se pudo compilar el selector de pantalla."
+    echo "Log: $SELECTOR_BUILD_LOG"
+    exit 1
+fi
+
+# Esta primera sesion solo pregunta si se quiere pantalla completa o ventana.
+echo "DOSBox: seleccionando modo de pantalla"
+dosbox -noconsole \
+    -c "mount c \"$ROOT_DIR\"" \
+    -c "c:" \
+    -c "C:\\TURBOC3\\BUILD\\FSSEL.EXE" \
+    -c "exit" >/dev/null 2>&1
+
+# El selector guarda 1 para fullscreen y 0 para ventana. Si falta el archivo,
+# se usa fullscreen para conservar el comportamiento anterior.
+SCREEN_MODE="1"
+if [ -f "$SELECTOR_CFG" ]; then
+    read -r SCREEN_MODE < "$SELECTOR_CFG" || SCREEN_MODE="1"
+    SCREEN_MODE="${SCREEN_MODE//$'\r'/}"
+    SCREEN_MODE="${SCREEN_MODE:0:1}"
+fi
+
+DOSBOX_SCREEN_ARGS=()
+if [ "$SCREEN_MODE" = "0" ]; then
+    echo "DOSBox: modo ventana"
+else
+    DOSBOX_SCREEN_ARGS=(-fullscreen)
+    echo "DOSBox: modo pantalla completa"
+fi
+
 # DOSBox monta el proyecto como C: y delega la compilacion real a RUN.BAT.
 echo "DOSBox: compilando y ejecutando $SOURCE_PATH"
-dosbox -noconsole \
+dosbox "${DOSBOX_SCREEN_ARGS[@]}" -noconsole \
     -c "mount c \"$ROOT_DIR\"" \
     -c "c:" \
     -c "cd TURBOC3\\BIN" \
