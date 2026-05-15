@@ -44,10 +44,11 @@ if [ ! -f "$ROOT_DIR/TURBOC3/BIN/TCC.EXE" ]; then
 fi
 
 SOURCE_BASE="$(basename "$SOURCE_PATH")"
-SOURCE_NAME="${SOURCE_BASE%.*}"
 SOURCE_EXT=".${SOURCE_BASE##*.}"
 STAGED_DIR="$ROOT_DIR/TURBOC3/BUILD"
-STAGED_PATH="$STAGED_DIR/$SOURCE_NAME$SOURCE_EXT"
+STAGED_NAME="ACTIVE"
+STAGED_EXT="$SOURCE_EXT"
+STAGED_PATH="$STAGED_DIR/$STAGED_NAME$STAGED_EXT"
 SELECTOR_SOURCE="$ROOT_DIR/projects/FSSELECT/FSSEL.C"
 SELECTOR_EXE="$STAGED_DIR/FSSEL.EXE"
 SELECTOR_CFG="$ROOT_DIR/TURBOC3/FULLSCR.CFG"
@@ -62,6 +63,9 @@ fi
 mkdir -p "$STAGED_DIR"
 mkdir -p "$ROOT_DIR/logs"
 cp "$ROOT_DIR/tools/RUN.BAT" "$ROOT_DIR/TURBOC3/BIN/RUN.BAT"
+
+# Turbo C/DOSBox trabaja de forma mas estable con nombres 8.3 sin espacios.
+# El archivo original puede tener espacios; dentro de DOSBox se compila ACTIVE.C.
 cp "$SOURCE_FULL_PATH" "$STAGED_PATH"
 
 # El selector es una herramienta auxiliar: no usa RUN.BAT ni compila el archivo activo.
@@ -112,6 +116,6 @@ dosbox "${DOSBOX_SCREEN_ARGS[@]}" -noconsole \
     -c "mount c \"$ROOT_DIR\"" \
     -c "c:" \
     -c "cd TURBOC3\\BIN" \
-    -c "RUN.BAT TURBOC3\\BUILD $SOURCE_NAME $SOURCE_EXT" >/dev/null 2>&1
+    -c "RUN.BAT TURBOC3\\BUILD $STAGED_NAME $STAGED_EXT" >/dev/null 2>&1
 
 echo "Log: $ROOT_DIR/logs/OUTPUT.TXT"

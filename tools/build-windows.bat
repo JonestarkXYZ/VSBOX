@@ -50,11 +50,12 @@ IF NOT DEFINED REL_PATH (
 )
 
 FOR %%F IN ("!REL_PATH!") DO (
-    SET "SOURCE_NAME=%%~nF"
     SET "SOURCE_EXT=%%~xF"
 )
 
 SET "STAGED_DIR=%ROOT_DIR%\TURBOC3\BUILD"
+SET "STAGED_NAME=ACTIVE"
+SET "STAGED_EXT=!SOURCE_EXT!"
 SET "SELECTOR_SOURCE=%ROOT_DIR%\projects\FSSELECT\FSSEL.C"
 SET "SELECTOR_EXE=%STAGED_DIR%\FSSEL.EXE"
 SET "SELECTOR_CFG=%ROOT_DIR%\TURBOC3\FULLSCR.CFG"
@@ -73,7 +74,10 @@ IF ERRORLEVEL 1 (
     ECHO Error: no se pudo copiar tools\RUN.BAT a TURBOC3\BIN.
     EXIT /B 1
 )
-COPY /Y "%SOURCE_INPUT%" "%STAGED_DIR%\!SOURCE_NAME!!SOURCE_EXT!" >NUL
+
+REM Turbo C/DOSBox trabaja de forma mas estable con nombres 8.3 sin espacios.
+REM El archivo original puede tener espacios; dentro de DOSBox se compila ACTIVE.C.
+COPY /Y "%SOURCE_INPUT%" "%STAGED_DIR%\!STAGED_NAME!!STAGED_EXT!" >NUL
 IF ERRORLEVEL 1 (
     ECHO Error: no se pudo copiar el archivo a TURBOC3\BUILD.
     EXIT /B 1
@@ -131,6 +135,6 @@ dosbox !DOSBOX_SCREEN_ARG! -noconsole ^
     -c "mount c \"%ROOT_DIR%\"" ^
     -c "c:" ^
     -c "cd TURBOC3\BIN" ^
-    -c "RUN.BAT TURBOC3\BUILD !SOURCE_NAME! !SOURCE_EXT!" >NUL 2>NUL
+    -c "RUN.BAT TURBOC3\BUILD !STAGED_NAME! !STAGED_EXT!" >NUL 2>NUL
 
 ECHO Log: %ROOT_DIR%\logs\OUTPUT.TXT
