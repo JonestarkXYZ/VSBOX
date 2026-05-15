@@ -1,0 +1,40 @@
+logs/*.TXT
+logs/*.txt
+!logs/.gitkeep
+
+# Toolchain propietario/local. No redistribuir desde este repositorio.
+TURBOC3/
+TURBOC3_Anterior/
+Turbo.C.3.2/
+Turbo.C.3.2*/
+
+# Paquetes descargados/locales.
+*.zip
+*.7z
+*.rar
+*.msi
+
+# Salidas generadas por Turbo C/TLINK/DOSBox.
+*.EXE
+*.exe
+*.OBJ
+*.obj
+*.MAP
+*.map
+*.SWP
+*.swp
+*.BAK
+*.bak
+
+# Archivos temporales comunes.
+*.tmp
+*.log
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.DS_Store
+Thumbs.db
+.agents
+.codex

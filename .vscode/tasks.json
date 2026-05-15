@@ -1,0 +1,37 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "DOSBox: compilar y ejecutar archivo actual",
+            "type": "shell",
+            "linux": {
+                "command": "${workspaceFolder}/tools/build-linux.sh",
+                "args": [
+                    "${relativeFile}"
+                ]
+            },
+            "windows": {
+                "command": "${workspaceFolder}\\tools\\build-windows.bat",
+                "args": [
+                    "${relativeFile}"
+                ]
+            },
+            "osx": {
+                "command": "${workspaceFolder}/tools/build-linux.sh",
+                "args": [
+                    "${relativeFile}"
+                ]
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared",
+                "echo": false,
+                "showReuseMessage": false
+            }
+        }
+    ]
+}
