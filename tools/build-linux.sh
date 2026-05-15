@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Compila y ejecuta un archivo C/C++ de Turbo C usando DOSBox desde Linux/macOS.
-# Uso: ./tools/build-linux.sh test/Show3D/3D.C
+# Uso: ./tools/build-linux.sh projects/Show3D/3D.C
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 

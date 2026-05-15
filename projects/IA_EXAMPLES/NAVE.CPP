@@ -104,7 +104,7 @@ int readEdges(FILE *file, struct Model *model, int count) {
     int a;
     int b;
 
-    // Las aristas conectan vertices por indice, igual que en test/Show3D.
+    // Las aristas conectan vertices por indice, igual que en projects/Show3D.
     if (count < 1 || count > MAX_EDGES) {
         return 0;
     }
@@ -167,7 +167,7 @@ int tryLoadModel(struct Model *model, char *path) {
 
 int loadModelByName(struct Model *model, char *fileName) {
     int i;
-    char paths[5][90];
+    char paths[3][90];
 
     // Construye rutas DOS compatibles para cargar cualquier modelo del ejemplo.
     strcpy(paths[0], "MODELS\\");
@@ -176,16 +176,10 @@ int loadModelByName(struct Model *model, char *fileName) {
     strcpy(paths[1], "models\\");
     strcat(paths[1], fileName);
 
-    strcpy(paths[2], "C:\\test\\IA_EXAMPLES\\models\\");
+    strcpy(paths[2], "C:\\PROJECTS\\IA_EXA~1\\MODELS\\");
     strcat(paths[2], fileName);
 
-    strcpy(paths[3], "C:\\TEST\\IA_EXA~1\\MODELS\\");
-    strcat(paths[3], fileName);
-
-    strcpy(paths[4], "C:\\TEST\\IA_EXA~1\\MODELS\\");
-    strcat(paths[4], fileName);
-
-    for (i = 0; i < 5; i++) {
+    for (i = 0; i < 3; i++) {
         if (tryLoadModel(model, paths[i])) {
             return 1;
         }
@@ -503,8 +497,8 @@ int main() {
 
     clearModel(&ship);
     if (!loadShipModel(&ship)) {
-        printf("No se pudo abrir test\\IA_EXAMPLES\\models\\NAVE.TXT\n");
-        printf("Verifica test\\IA_EXAMPLES\\models\\NAVE.TXT\n");
+        printf("No se pudo abrir projects\\IA_EXAMPLES\\models\\NAVE.TXT\n");
+        printf("Verifica projects\\IA_EXAMPLES\\models\\NAVE.TXT\n");
         printf("Presiona una tecla para salir...");
         getch();
         return 1;
@@ -512,8 +506,8 @@ int main() {
 
     clearModel(&bulletModel);
     if (!loadBulletModel(&bulletModel)) {
-        printf("No se pudo abrir test\\IA_EXAMPLES\\models\\DISPARO.TXT\n");
-        printf("Verifica test\\IA_EXAMPLES\\models\\DISPARO.TXT\n");
+        printf("No se pudo abrir projects\\IA_EXAMPLES\\models\\DISPARO.TXT\n");
+        printf("Verifica projects\\IA_EXAMPLES\\models\\DISPARO.TXT\n");
         printf("Presiona una tecla para salir...");
         getch();
         return 1;

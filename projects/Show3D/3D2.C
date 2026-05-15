@@ -6,7 +6,7 @@ int main() {
     FILE* archivo;
     int numero;
 
-    archivo = fopen("C:\\test\\Show3D\\models\\model1.txt", "r");
+    archivo = fopen("C:\\projects\\Show3D\\models\\model1.txt", "r");
     if (!archivo) {
         printf("No se pudo abrir el modelo\n");
         getch();

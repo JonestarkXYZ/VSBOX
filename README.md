@@ -118,19 +118,19 @@ logs/LOG.TXT
 Linux/macOS:
 
 ```bash
-./tools/build-linux.sh test/Show3D/3D.C
+./tools/build-linux.sh projects/Show3D/3D.C
 ```
 
 Windows:
 
 ```bat
-tools\build-windows.bat test\Show3D\3D.C
+tools\build-windows.bat projects\Show3D\3D.C
 ```
 
 ## Estructura
 
 - `src/`: código principal del proyecto.
-- `test/`: ejemplos y pruebas C/C++.
+- `projects/`: ejemplos y pruebas C/C++.
 - `models/`: modelos de vértices/aristas usados por ejemplos 3D.
 - `logs/`: logs generados por compilación y ejecución.
 - `tools/setup_turboc3.py`: instalador local del toolchain desde ZIP o carpeta.

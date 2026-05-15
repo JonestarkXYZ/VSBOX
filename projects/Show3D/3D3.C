@@ -9,7 +9,7 @@ int main() {
     int valor;
     int X = 0, Y = 0;
 
-    archivo = fopen("C:\\test\\Show3D\\models\\model1.txt", "r");
+    archivo = fopen("C:\\projects\\Show3D\\models\\model1.txt", "r");
     if (!archivo) {
         printf("No se pudo abrir el modelo\n");
         getch();
