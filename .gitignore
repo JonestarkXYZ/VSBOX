@@ -38,3 +38,9 @@ __pycache__/
 Thumbs.db
 .agents
 .codex
+
+#Convertidor y reproductor de sonidos
+*.RAW
+*.WAV
+CONVERT_LOG.TXT
+SOUND.TXT
