@@ -5,6 +5,12 @@
 #include <conio.h>
 #include <graphics.h>
 
+#define SCREEN_CENTER_X 320
+#define SCREEN_CENTER_Y 175
+
+int visualPage = 0;
+int activePage = 1;
+
 // Posicion de cada vértice del cubo
 float cube[8][3] = {
     {-100,-100,-100},{100,-100,-100},{100,100,-100},{-100,100,-100},
@@ -31,20 +37,45 @@ void project(float x, float y, float z, int *sx, int *sy) {
     if (dz < 1.0) dz = 1.0;
     float scale = 100.0 / dz;
 
-    *sx = 320 + (int)(x * scale);
-    *sy = 240 - (int)(y * scale);
+    *sx = SCREEN_CENTER_X + (int)(x * scale);
+    *sy = SCREEN_CENTER_Y - (int)(y * scale);
+}
+
+void initDoubleBufferPages() {
+    // VGAMED permite dos paginas BGI: una visible y otra oculta para dibujar.
+    setwritemode(COPY_PUT);
+    setactivepage(0);
+    cleardevice();
+    setactivepage(1);
+    cleardevice();
+    setvisualpage(0);
+    setactivepage(1);
+    visualPage = 0;
+    activePage = 1;
+}
+
+void flipDoubleBufferPage() {
+    // Muestra el frame solo cuando la pagina oculta ya esta completa.
+    setvisualpage(activePage);
+    visualPage = activePage;
+    activePage = 1 - activePage;
 }
 
 int main() {
-    int gd = DETECT, gm;
+    int gd = VGA, gm = VGAMED;
     clrscr();
     initgraph(&gd, &gm, "BGI");
+    initDoubleBufferPages();
 
     float angle = 0;
     int i, frame;
     int projected[8][2];
 
     for (frame = 0; frame < 500; frame++) {
+        setactivepage(activePage);
+        setwritemode(COPY_PUT);
+        cleardevice();
+
         // Rotar el cubo
         for (i = 0; i < 8; i++) {
             float x = cube[i][0];
@@ -66,12 +97,15 @@ int main() {
                  projected[b][0], projected[b][1]);
         }
 
+        flipDoubleBufferPage();
         delay(34);
         angle += 0.05;
         //angle += 1;
-        cleardevice();
     }
 
+    setactivepage(0);
+    setvisualpage(0);
+    cleardevice();
     setcolor(RED);
     outtextxy(10, 10, "Fin del giro. Presiona una tecla...");
     //getch();

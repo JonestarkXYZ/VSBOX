@@ -2,7 +2,7 @@
 SETLOCAL EnableExtensions EnableDelayedExpansion
 
 REM Compila y ejecuta un archivo C/C++ de Turbo C usando DOSBox desde Windows.
-REM Uso: tools\build-windows.bat projects\Show3D\3D.C
+REM Uso: tools\build-windows.bat projects\3D\Show3D\Models3D.C
 
 IF "%~1"=="" (
     ECHO Uso: %~nx0 ruta\relativa\archivo.C

@@ -8,7 +8,7 @@
 #define MAX_VERTICES 180
 #define MAX_ARISTAS 260
 #define TOTAL_MODELOS 12
-#define MODEL_DIR "C:\\projects\\Show3D\\models\\"
+#define MODEL_DIR "C:\\projects\\3D\\Show3D\\models\\"
 #define BGI_DIR "C:\\TURBOC3\\BGI"
 #define VIEW_DISTANCE 420.0
 #define FOCAL_LENGTH 300.0
@@ -55,6 +55,8 @@ int numAristas = 0;
 int screenW = 639;
 int screenH = 479;
 int hasPreviousFrame = 0;
+int visualPage = 0;
+int activePage = 1;
 float angulo = 0.0;
 
 struct ModeloInfo modelos[TOTAL_MODELOS] = {
@@ -440,10 +442,31 @@ void erasePreviousFrame(int color) {
         return;
     }
 
-    // Borrado incremental: evita el parpadeo de cleardevice() en cada frame.
+    // Borrado incremental historico; el visor principal ahora usa doble pagina.
     drawVerticesFrom(color, 1, oldPx, oldPy, oldPz);
     drawEdgesFrom(color, 1, oldPx, oldPy, oldPz);
     drawAxisFrom(oldAxisPx, oldAxisPy, 1);
+}
+
+void initDoubleBufferPages(void) {
+    // Limpia las dos paginas BGI y deja una visible y otra lista para dibujar.
+    setwritemode(COPY_PUT);
+    setactivepage(0);
+    cleardevice();
+    setactivepage(1);
+    cleardevice();
+    setvisualpage(0);
+    setactivepage(1);
+    visualPage = 0;
+    activePage = 1;
+    hasPreviousFrame = 0;
+}
+
+void flipDoubleBufferPage(void) {
+    // El cambio visual se hace solo cuando el frame oculto ya esta completo.
+    setvisualpage(activePage);
+    visualPage = activePage;
+    activePage = 1 - activePage;
 }
 
 void flushKeyboard(void) {
@@ -508,9 +531,7 @@ void drawHud(char *nombre, int indice) {
 int drawModel(char *nombre, int color, int indice) {
     int navAction;
 
-    cleardevice();
-    drawHud(nombre, indice);
-    hasPreviousFrame = 0;
+    initDoubleBufferPages();
 
     while (1) {
         navAction = readNavigationKey();
@@ -518,13 +539,15 @@ int drawModel(char *nombre, int color, int indice) {
             return navAction;
         }
 
-        erasePreviousFrame(color);
+        setactivepage(activePage);
+        setwritemode(COPY_PUT);
+        cleardevice();
         transformModel(angulo);
         drawAxis(angulo);
         drawEdges(color);
         drawVertices(color);
         drawHud(nombre, indice);
-        saveFrame();
+        flipDoubleBufferPage();
 
         delay(FRAME_DELAY_MS);
         angulo += 0.035;
@@ -539,8 +562,9 @@ int main(void) {
     int navAction;
     char path[90];
 
-    gd = DETECT;
-    gm = 0;
+    // VGAMED permite dos paginas reales en BGI para ocultar el dibujo parcial.
+    gd = VGA;
+    gm = VGAMED;
     initgraph(&gd, &gm, BGI_DIR);
     graphError = graphresult();
     if (graphError != grOk) {
@@ -552,6 +576,7 @@ int main(void) {
     screenW = getmaxx();
     screenH = getmaxy();
     setbkcolor(BLACK);
+    initDoubleBufferPages();
 
     modeloActual = 0;
     while (1) {
@@ -586,6 +611,8 @@ int main(void) {
         }
     }
 
+    setactivepage(0);
+    setvisualpage(0);
     cleardevice();
     setcolor(LIGHTGREEN);
     outtextxy(10, 10, "Fin del visor 3D. Presiona una tecla...");

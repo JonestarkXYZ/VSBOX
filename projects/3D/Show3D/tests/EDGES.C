@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define MODEL_PATH "C:\\projects\\Show3D\\models\\model1.txt"
+#define MODEL_PATH "C:\\projects\\3D\\Show3D\\models\\model1.txt"
 #define WORD_SIZE 24
 #define MAX_VERTICES 180
 #define MAX_ARISTAS 260

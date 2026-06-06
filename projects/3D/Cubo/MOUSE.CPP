@@ -3,9 +3,14 @@
 #include <conio.h>
 #include <dos.h>
 
+#define SCREEN_CENTER_X 320
+#define SCREEN_CENTER_Y 175
+
 union REGS in, out;
 
 int mouseX, mouseY;
+int visualPage = 0;
+int activePage = 1;
 
 // Aristas del cubo (pares de vértices conectados)
 int edges[12][2] = {
@@ -27,8 +32,8 @@ void project(float x, float y, float z, int *sx, int *sy) {
     if (dz < 1.0) dz = 1.0;
     float scale = 100.0 / dz;
 
-    *sx = 320 + (int)(x * scale);
-    *sy = 240 - (int)(y * scale);
+    *sx = SCREEN_CENTER_X + (int)(x * scale);
+    *sy = SCREEN_CENTER_Y - (int)(y * scale);
 }
 
 void showMouse() {
@@ -44,10 +49,31 @@ void getMousePos() {
     mouseY = out.x.dx;    // Posición Y del mouse
 }
 
+void initDoubleBufferPages() {
+    // Usa una pagina oculta para dibujar el cubo y cambia a ella al terminar.
+    setwritemode(COPY_PUT);
+    setactivepage(0);
+    cleardevice();
+    setactivepage(1);
+    cleardevice();
+    setvisualpage(0);
+    setactivepage(1);
+    visualPage = 0;
+    activePage = 1;
+}
+
+void flipDoubleBufferPage() {
+    // Muestra el frame completo sin que se vea el redibujado parcial.
+    setvisualpage(activePage);
+    visualPage = activePage;
+    activePage = 1 - activePage;
+}
+
 int main() {
-    int gd = DETECT, gm;
+    int gd = VGA, gm = VGAMED;
     clrscr();
     initgraph(&gd, &gm, "BGI");
+    initDoubleBufferPages();
 
     // Inicializar mouse
     in.x.ax = 0;
@@ -56,8 +82,9 @@ int main() {
     // Posicionar puntero del mouse
     in.x.ax = 4;               // Función 4: mover puntero del mouse
     in.x.cx = 320;               // Coordenada X
-    in.x.dx = 250;               // Coordenada Y
+    in.x.dx = SCREEN_CENTER_Y;    // Coordenada Y
     int86(0x33, &in, &out);
+    showMouse();
 
     // Posicion de cada vértice del cubo
     float cube[8][3] = {
@@ -71,8 +98,10 @@ int main() {
 
     for (frame = 0; frame < 500; frame++) {
 
-        showMouse();
         getMousePos();
+        setactivepage(activePage);
+        setwritemode(COPY_PUT);
+        cleardevice();
 
         // Rotar el cubo
         for (i = 0; i < 8; i++) {
@@ -100,12 +129,15 @@ int main() {
                  projected[b][0], projected[b][1]);
         }
 
+        flipDoubleBufferPage();
         delay(34);
         angle += 0.05;
         //angle += 1;
-        cleardevice();
     }
 
+    setactivepage(0);
+    setvisualpage(0);
+    cleardevice();
     setcolor(RED);
     outtextxy(10, 10, "Fin del giro. Presiona una tecla...");
     //getch();

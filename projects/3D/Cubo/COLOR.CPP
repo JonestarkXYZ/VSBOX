@@ -5,6 +5,11 @@
 #include <math.h>
 #include <conio.h>
 
+#define SCREEN_CENTER_X 320
+#define SCREEN_CENTER_Y 175
+
+int visualPage = 0;
+int activePage = 1;
 
 int projected[8][2];
 float transformed[8][3];
@@ -38,8 +43,28 @@ void project(float x, float y, float z, int* sx, int* sy) {
     float dz = z + 300.0;
     if (dz < 1.0) dz = 1.0;
     float scale = 100.0 / dz;
-    *sx = 320 + (int)(x * scale);
-    *sy = 240 - (int)(y * scale);
+    *sx = SCREEN_CENTER_X + (int)(x * scale);
+    *sy = SCREEN_CENTER_Y - (int)(y * scale);
+}
+
+void initDoubleBufferPages() {
+    // Dibuja en una pagina no visible y muestra el frame completo al final.
+    setwritemode(COPY_PUT);
+    setactivepage(0);
+    cleardevice();
+    setactivepage(1);
+    cleardevice();
+    setvisualpage(0);
+    setactivepage(1);
+    visualPage = 0;
+    activePage = 1;
+}
+
+void flipDoubleBufferPage() {
+    // Evita que se vean caras parciales durante fillpoly().
+    setvisualpage(activePage);
+    visualPage = activePage;
+    activePage = 1 - activePage;
 }
 
 // Calcular producto escalar de dos vectores 3D
@@ -62,12 +87,15 @@ void faceNormal(int face[4], float out[3]) {
 }
 
 int main() {
-    int gd = DETECT, gm;
+    int gd = VGA, gm = VGAMED;
     initgraph(&gd, &gm, "BGI");
+    initDoubleBufferPages();
     float angle = 0;
     int poly[8];
 
     for (frame = 0; frame < 1000; frame++) {
+        setactivepage(activePage);
+        setwritemode(COPY_PUT);
         cleardevice();
 
         // Proyectar y rotar vértices
@@ -110,10 +138,13 @@ int main() {
             }
         }
 
+        flipDoubleBufferPage();
         delay(11);
         angle += 0.05;
     }
 
+    setactivepage(0);
+    setvisualpage(0);
     closegraph();
     return 0;
 }

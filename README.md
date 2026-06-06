@@ -118,22 +118,23 @@ logs/LOG.TXT
 Linux/macOS:
 
 ```bash
-./tools/build-linux.sh projects/Show3D/3D.C
+./tools/build-linux.sh projects/3D/Show3D/Models3D.C
 ```
 
 Windows:
 
 ```bat
-tools\build-windows.bat projects\Show3D\3D.C
+tools\build-windows.bat projects\3D\Show3D\Models3D.C
 ```
 
 ## Estructura
 
 - `src/`: código principal del proyecto.
 - `projects/`: ejemplos y pruebas C/C++.
-- `models/`: modelos de vértices/aristas usados por ejemplos 3D.
+- `projects/3D/`: ejemplos y modelos usados por las pruebas 3D.
 - `logs/`: logs generados por compilación y ejecución.
 - `tools/setup_turboc3.py`: instalador local del toolchain desde ZIP o carpeta.
+- `tools/BGI_MULTIPAGE_README.TXT`: guia para usar doble pagina BGI en animaciones 2D/3D.
 - `tools/RUN.BAT`: script DOS usado dentro de DOSBox.
 - `tools/DOSDATE.C`: auxiliar propio para fecha/hora en logs.
 - `tools/build-linux.sh`: lanzador para Linux/macOS.

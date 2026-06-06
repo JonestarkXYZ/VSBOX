@@ -6,6 +6,7 @@ Archivo principal:
 
 Objetivo:
   Comparar varios metodos de refresco de lineas 3D en Turbo C++/BGI.
+  El programa inicia en el modo 4 para priorizar animacion sin pintado parcial.
 
 Modos incluidos:
   1. cleardevice completo
@@ -29,7 +30,7 @@ Controles:
   ESC         Salir.
 
 Ejecucion desde Linux:
-  ./tools/build-linux.sh projects/3D_TESTS/CUBE3D.CPP
+  ./tools/build-linux.sh projects/3D/3D_TESTS/CUBE3D.CPP
 
 Nota tecnica:
   En BGI no existe un objeto "linea" que se mueva como entidad persistente.

@@ -8,7 +8,7 @@
 #include <time.h>
 
 #define SCREEN_W 640
-#define SCREEN_H 480
+#define SCREEN_H 350
 
 #define MAX_VERTICES 80
 #define MAX_EDGES 120
@@ -67,6 +67,8 @@ struct Bullet bullets[MAX_BULLETS];
 struct Star stars[MAX_STARS];
 int projectedX[MAX_VERTICES];
 int projectedY[MAX_VERTICES];
+int visualPage = 0;
+int activePage = 1;
 
 void clearModel(struct Model *model) {
     // Reinicia el modelo para evitar usar datos viejos si la carga falla.
@@ -104,7 +106,7 @@ int readEdges(FILE *file, struct Model *model, int count) {
     int a;
     int b;
 
-    // Las aristas conectan vertices por indice, igual que en projects/Show3D.
+    // Las aristas conectan vertices por indice, igual que en projects/3D/Show3D.
     if (count < 1 || count > MAX_EDGES) {
         return 0;
     }
@@ -176,7 +178,7 @@ int loadModelByName(struct Model *model, char *fileName) {
     strcpy(paths[1], "models\\");
     strcat(paths[1], fileName);
 
-    strcpy(paths[2], "C:\\PROJECTS\\IA_EXA~1\\MODELS\\");
+    strcpy(paths[2], "C:\\PROJECTS\\3D\\IA_EXA~1\\MODELS\\");
     strcat(paths[2], fileName);
 
     for (i = 0; i < 3; i++) {
@@ -477,6 +479,26 @@ void drawHud(int autoPilot) {
     }
 }
 
+void initDoubleBufferPages() {
+    // En VGAMED hay dos paginas BGI: una visible y otra oculta para dibujar.
+    setwritemode(COPY_PUT);
+    setactivepage(0);
+    cleardevice();
+    setactivepage(1);
+    cleardevice();
+    setvisualpage(0);
+    setactivepage(1);
+    visualPage = 0;
+    activePage = 1;
+}
+
+void flipDoubleBufferPage() {
+    // Muestra el frame solo despues de dibujar estrellas, balas y nave.
+    setvisualpage(activePage);
+    visualPage = activePage;
+    activePage = 1 - activePage;
+}
+
 int main() {
     struct Model ship;
     struct Model bulletModel;
@@ -497,8 +519,8 @@ int main() {
 
     clearModel(&ship);
     if (!loadShipModel(&ship)) {
-        printf("No se pudo abrir projects\\IA_EXAMPLES\\models\\NAVE.TXT\n");
-        printf("Verifica projects\\IA_EXAMPLES\\models\\NAVE.TXT\n");
+        printf("No se pudo abrir projects\\3D\\IA_EXAMPLES\\models\\NAVE.TXT\n");
+        printf("Verifica projects\\3D\\IA_EXAMPLES\\models\\NAVE.TXT\n");
         printf("Presiona una tecla para salir...");
         getch();
         return 1;
@@ -506,16 +528,18 @@ int main() {
 
     clearModel(&bulletModel);
     if (!loadBulletModel(&bulletModel)) {
-        printf("No se pudo abrir projects\\IA_EXAMPLES\\models\\DISPARO.TXT\n");
-        printf("Verifica projects\\IA_EXAMPLES\\models\\DISPARO.TXT\n");
+        printf("No se pudo abrir projects\\3D\\IA_EXAMPLES\\models\\DISPARO.TXT\n");
+        printf("Verifica projects\\3D\\IA_EXAMPLES\\models\\DISPARO.TXT\n");
         printf("Presiona una tecla para salir...");
         getch();
         return 1;
     }
 
-    gd = DETECT;
-    gm = 0;
+    // VGAMED sacrifica altura vertical, pero permite doble pagina real en BGI.
+    gd = VGA;
+    gm = VGAMED;
     initgraph(&gd, &gm, "BGI");
+    initDoubleBufferPages();
 
     srand((unsigned)time(NULL));
     initStars();
@@ -563,17 +587,22 @@ int main() {
         pitch = (float)(sin(frame * 0.018) * 0.07);
         roll = bank;
 
+        setactivepage(activePage);
+        setwritemode(COPY_PUT);
         cleardevice();
         drawStars();
         drawHud(autoPilot);
         drawBullets(&bulletModel);
         drawModel(&ship, (int)shipX, (int)shipY, 1.45, yaw, pitch, roll, LIGHTCYAN);
         drawEngineGlow((int)shipX, (int)shipY, frame);
+        flipDoubleBufferPage();
 
         delay(28);
         frame++;
     }
 
+    setactivepage(0);
+    setvisualpage(0);
     closegraph();
     return 0;
 }
