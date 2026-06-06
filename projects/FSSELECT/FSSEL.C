@@ -12,7 +12,10 @@
 #define PANEL_LEFT 16
 #define PANEL_TOP 5
 #define PANEL_WIDTH 49
-#define PANEL_HEIGHT 16
+#define PANEL_HEIGHT 18
+#define SELECT_TIMEOUT_SECONDS 5
+#define SELECT_POLL_MS 100
+#define SELECT_TICKS_PER_SECOND (1000 / SELECT_POLL_MS)
 #define KEY_ESC 27
 #define KEY_ENTER 13
 #define KEY_EXTENDED 0
@@ -155,8 +158,38 @@ void draw_option(int row, char *hotkey, char *label, int selected)
     cprintf("  %s", label);
 }
 
+/* Limpia una fila interna del panel antes de reescribir texto variable. */
+void clear_panel_line(int row)
+{
+    int i;
+
+    set_style(LIGHTGRAY, BLUE);
+    gotoxy(PANEL_LEFT + 3, row);
+    for (i = 0; i < PANEL_WIDTH - 6; i++) {
+        cprintf(" ");
+    }
+}
+
+/* Muestra la cuenta regresiva que evita dejar el build detenido sin usuario. */
+void draw_timeout_status(int saved_mode, int remaining_seconds, int timeout_active)
+{
+    char *mode_text;
+
+    mode_text = saved_mode ? "PANTALLA COMPLETA" : "VENTANA";
+
+    clear_panel_line(PANEL_TOP + 13);
+    set_style(YELLOW, BLUE);
+    gotoxy(PANEL_LEFT + 5, PANEL_TOP + 13);
+    if (timeout_active) {
+        cprintf("Auto en %d s: %s", remaining_seconds, mode_text);
+    } else {
+        cprintf("Auto pausado: confirma con ENTER o ESC.");
+    }
+}
+
 /* Dibuja una interfaz mas clara y visual, sin cambiar la logica del selector. */
-void draw_menu(int saved_mode, int selected_mode)
+void draw_menu(int saved_mode, int selected_mode, int remaining_seconds,
+               int timeout_active)
 {
     clear_screen(BLUE);
     draw_box(PANEL_LEFT, PANEL_TOP, PANEL_WIDTH, PANEL_HEIGHT, WHITE, BLUE);
@@ -187,9 +220,16 @@ void draw_menu(int saved_mode, int selected_mode)
     gotoxy(PANEL_LEFT + 5, PANEL_TOP + 12);
     cprintf("Usa flechas, 1/2, ENTER o ESC.");
 
+    draw_timeout_status(saved_mode, remaining_seconds, timeout_active);
+
     set_style(YELLOW, BLUE);
-    gotoxy(PANEL_LEFT + 5, PANEL_TOP + 14);
-    cprintf("Seleccione una opcion: ");
+    gotoxy(PANEL_LEFT + 5, PANEL_TOP + 15);
+    cprintf("Seleccion: %s",
+            selected_mode ? "PANTALLA COMPLETA" : "VENTANA");
+
+    set_style(WHITE, BLUE);
+    gotoxy(PANEL_LEFT + 5, PANEL_TOP + 16);
+    cprintf("ENTER confirma, ESC conserva guardado.");
 }
 
 /* Lee el teclado y permite mover la seleccion con flecha arriba/abajo.
@@ -199,33 +239,91 @@ int select_mode_with_keyboard(int saved_mode)
     int selected_mode;
     int key;
     int scan_code;
+    int remaining_seconds;
+    int last_remaining_seconds;
+    int remaining_ticks;
+    int timeout_active;
 
     selected_mode = saved_mode;
-    draw_menu(saved_mode, selected_mode);
+    timeout_active = 1;
+    remaining_seconds = SELECT_TIMEOUT_SECONDS;
+    last_remaining_seconds = remaining_seconds;
+    remaining_ticks = SELECT_TIMEOUT_SECONDS * SELECT_TICKS_PER_SECOND;
+    draw_menu(saved_mode, selected_mode, remaining_seconds, timeout_active);
 
     while (1) {
-        key = getch();
-
-        if (key == KEY_EXTENDED || key == KEY_EXTENDED_ALT) {
-            scan_code = getch();
-
-            if (scan_code == KEY_ARROW_UP) {
-                selected_mode = MODE_FULLSCREEN;
-                draw_menu(saved_mode, selected_mode);
-            } else if (scan_code == KEY_ARROW_DOWN) {
-                selected_mode = MODE_WINDOW;
-                draw_menu(saved_mode, selected_mode);
+        if (kbhit()) {
+            key = getch();
+            if (timeout_active) {
+                timeout_active = 0;
+                draw_menu(saved_mode, selected_mode, remaining_seconds,
+                          timeout_active);
             }
-        } else if (key == '1') {
-            return MODE_FULLSCREEN;
-        } else if (key == '2') {
-            return MODE_WINDOW;
-        } else if (key == KEY_ENTER) {
-            return selected_mode;
-        } else if (key == KEY_ESC) {
+
+            if (key == KEY_EXTENDED || key == KEY_EXTENDED_ALT) {
+                scan_code = getch();
+
+                if (scan_code == KEY_ARROW_UP) {
+                    selected_mode = MODE_FULLSCREEN;
+                    draw_menu(saved_mode, selected_mode, remaining_seconds,
+                              timeout_active);
+                } else if (scan_code == KEY_ARROW_DOWN) {
+                    selected_mode = MODE_WINDOW;
+                    draw_menu(saved_mode, selected_mode, remaining_seconds,
+                              timeout_active);
+                }
+            } else if (key == '1') {
+                return MODE_FULLSCREEN;
+            } else if (key == '2') {
+                return MODE_WINDOW;
+            } else if (key == KEY_ENTER) {
+                return selected_mode;
+            } else if (key == KEY_ESC) {
+                return saved_mode;
+            }
+        }
+
+        if (!timeout_active) {
+            delay(SELECT_POLL_MS);
+            continue;
+        }
+
+        /* No bloquea: revisa teclado cada 100 ms y actualiza solo el contador. */
+        delay(SELECT_POLL_MS);
+        remaining_ticks--;
+        remaining_seconds = (remaining_ticks + SELECT_TICKS_PER_SECOND - 1) /
+                            SELECT_TICKS_PER_SECOND;
+
+        if (remaining_ticks <= 0) {
             return saved_mode;
         }
+
+        if (remaining_seconds != last_remaining_seconds) {
+            draw_timeout_status(saved_mode, remaining_seconds, timeout_active);
+            last_remaining_seconds = remaining_seconds;
+        }
     }
+}
+
+/* Muestra la confirmacion fuera del recuadro para no pisar el menu. */
+void draw_final_status(int mode)
+{
+    int row;
+    int i;
+
+    row = PANEL_TOP + PANEL_HEIGHT + 1;
+    set_style(LIGHTGRAY, BLACK);
+
+    for (i = 0; i < 2; i++) {
+        gotoxy(PANEL_LEFT, row + i);
+        cprintf("                                                     ");
+    }
+
+    gotoxy(PANEL_LEFT, row);
+    cprintf("Modo seleccionado: %s",
+            mode ? "PANTALLA COMPLETA" : "VENTANA");
+    gotoxy(PANEL_LEFT, row + 1);
+    cprintf("Continuando...");
 }
 
 int main(void)
@@ -237,9 +335,7 @@ int main(void)
 
     save_mode(mode);
 
-    cprintf("\r\n\r\nModo seleccionado: %s\r\n",
-            mode ? "PANTALLA COMPLETA" : "VENTANA");
-    cprintf("Continuando...\r\n");
+    draw_final_status(mode);
 
     /* Pausa breve para que el usuario alcance a ver la confirmacion. */
     delay(450);
