@@ -7,15 +7,18 @@
 #include <string.h>
 #include <ctype.h>
 
-#define OBJ_PATH "C:\\projects\\3D\\OBJ_TEST\\models\\model2.obj"
+#define OBJ_PATH "C:\\projects\\3D\\OBJ_TEST\\models\\sphere.obj"
 #define BGI_DIR "C:\\TURBOC3\\BGI"
 
 #define MAX_LINE 180
-/* Estos limites cargan mona.obj: 507 vertices y 968 triangulos generados. */
+/* Estos limites cargan mona.obj conservando caras triangulares y cuadradas. */
 #define MAX_VERTICES 560
-#define MAX_TRIANGLES 1000
+#define MAX_NORMALS 560
+#define MAX_FACES 1000
+#define MAX_FACE_REFS 5000
 #define MAX_EDGES 500
 #define MAX_FACE_ITEMS 32
+#define MAX_CLIPPED_POINTS (MAX_FACE_ITEMS + 2)
 
 #define TARGET_SIZE 220.0
 #define FOCAL_LENGTH 280.0
@@ -37,10 +40,16 @@ struct Vec3 {
     float z;
 };
 
-struct Triangle {
-    int a;
-    int b;
-    int c;
+struct PackedNormal {
+    signed char x;
+    signed char y;
+    signed char z;
+};
+
+struct Face {
+    int start;
+    int count;
+    int normal;
 };
 
 struct Edge {
@@ -50,10 +59,14 @@ struct Edge {
 
 struct Model {
     struct Vec3 vertices[MAX_VERTICES];
-    struct Triangle triangles[MAX_TRIANGLES];
+    struct PackedNormal normals[MAX_NORMALS];
+    struct Face faces[MAX_FACES];
+    int faceRefs[MAX_FACE_REFS];
     struct Edge edges[MAX_EDGES];
     int vertexCount;
-    int triangleCount;
+    int normalCount;
+    int faceCount;
+    int faceRefCount;
     int edgeCount;
     int ignoredCount;
 };
@@ -67,17 +80,15 @@ struct Camera {
     float roll;
 };
 
-struct RenderTriangle {
-    int triangleIndex;
-    int sx[3];
-    int sy[3];
+struct RenderFace {
+    int faceIndex;
     int color;
     float depth;
 };
 
 struct Model model;
 struct Camera camera;
-struct RenderTriangle renderList[MAX_TRIANGLES];
+struct RenderFace renderList[MAX_FACES];
 
 int screenW;
 int screenH;
@@ -92,8 +103,13 @@ float cameraZ[MAX_VERTICES];
 int renderCount;
 int visualPage;
 int activePage;
+int showEdges = 0;
+int cullBackfaces = 1;
+int backfaceCulledCount;
+int offscreenCulledCount;
+int nearCulledCount;
 
-int triangleColors[12] = {
+int faceColors[12] = {
     BLUE, GREEN, CYAN, RED, MAGENTA, BROWN,
     LIGHTBLUE, LIGHTGREEN, LIGHTCYAN, LIGHTRED, LIGHTMAGENTA, YELLOW
 };
@@ -116,6 +132,33 @@ float maxFloat(float a, float b) {
     return b;
 }
 
+float clampFloat(float value, float minValue, float maxValue) {
+    /* Limita valores antes de compactar normales en enteros pequenos. */
+    if (value < minValue) {
+        return minValue;
+    }
+
+    if (value > maxValue) {
+        return maxValue;
+    }
+
+    return value;
+}
+
+int packNormalComponent(float value) {
+    int packed;
+
+    /* Guarda normales en 1 byte por componente para ahorrar memoria en DOS. */
+    value = clampFloat(value, -1.0, 1.0);
+    if (value >= 0.0) {
+        packed = (int)((value * 100.0) + 0.5);
+    } else {
+        packed = (int)((value * 100.0) - 0.5);
+    }
+
+    return packed;
+}
+
 void waitExit(void) {
     /* Mantiene visible el mensaje cuando DOSBox cierra el programa. */
     printf("\nPresiona una tecla para salir...");
@@ -125,7 +168,9 @@ void waitExit(void) {
 void clearModel(struct Model *m) {
     /* Limpia el modelo antes de cargar otro OBJ. */
     m->vertexCount = 0;
-    m->triangleCount = 0;
+    m->normalCount = 0;
+    m->faceCount = 0;
+    m->faceRefCount = 0;
     m->edgeCount = 0;
     m->ignoredCount = 0;
 }
@@ -167,82 +212,93 @@ int isDigitText(char value) {
     return value >= '0' && value <= '9';
 }
 
-int skipOptionalObjIndex(char *token, int *pos) {
-    int hasDigits;
-
-    /* Lee una parte opcional de un indice tipo v/vt/vn. */
-    if (token[*pos] == '-' || token[*pos] == '+') {
-        (*pos)++;
-    }
-
-    hasDigits = 0;
-    while (isDigitText(token[*pos])) {
-        hasDigits = 1;
-        (*pos)++;
-    }
-
-    return hasDigits;
-}
-
-int parseObjIndex(char *token, int *value) {
-    int pos;
+int parseSignedObjNumber(char *token, int *pos, int *value) {
     int sign;
     int number;
-    int slashCount;
-    int hasOptional;
 
-    /* Soporta indices de cara: 1, 1/2, 1/2/3 y 1//3. */
-    pos = 0;
+    /* Lee un numero entero OBJ con signo opcional. */
     sign = 1;
     number = 0;
-    slashCount = 0;
 
-    if (token[pos] == '-') {
+    if (token[*pos] == '-') {
         sign = -1;
-        pos++;
-    } else if (token[pos] == '+') {
-        pos++;
+        (*pos)++;
+    } else if (token[*pos] == '+') {
+        (*pos)++;
     }
 
-    if (!isDigitText(token[pos])) {
+    if (!isDigitText(token[*pos])) {
         return 0;
     }
 
-    while (isDigitText(token[pos])) {
-        number = (number * 10) + (token[pos] - '0');
-        pos++;
+    while (isDigitText(token[*pos])) {
+        number = (number * 10) + (token[*pos] - '0');
+        (*pos)++;
     }
 
     *value = sign * number;
+    return 1;
+}
 
-    while (token[pos] != '\0') {
-        if (token[pos] != '/') {
+int parseObjFaceItem(char *token, int *vertexIndex, int *normalIndex, int *hasNormal) {
+    int pos;
+    int ignoredTexture;
+
+    /* Soporta indices OBJ: v, v/vt, v//vn y v/vt/vn. */
+    pos = 0;
+    *normalIndex = 0;
+    *hasNormal = 0;
+
+    if (!parseSignedObjNumber(token, &pos, vertexIndex)) {
+        return 0;
+    }
+
+    if (token[pos] == '\0') {
+        return 1;
+    }
+
+    if (token[pos] != '/') {
+        return 0;
+    }
+    pos++;
+
+    if (token[pos] == '\0') {
+        return 0;
+    }
+
+    if (token[pos] != '/' && token[pos] != '\0') {
+        if (!parseSignedObjNumber(token, &pos, &ignoredTexture)) {
             return 0;
-        }
-
-        slashCount++;
-        if (slashCount > 2) {
-            return 0;
-        }
-        pos++;
-
-        if (token[pos] == '\0') {
-            return 0;
-        }
-
-        if (token[pos] == '/') {
-            if (slashCount != 1) {
-                return 0;
-            }
-        } else {
-            hasOptional = skipOptionalObjIndex(token, &pos);
-            if (!hasOptional) {
-                return 0;
-            }
         }
     }
 
+    if (token[pos] == '\0') {
+        return 1;
+    }
+
+    if (token[pos] != '/') {
+        return 0;
+    }
+    pos++;
+
+    if (!parseSignedObjNumber(token, &pos, normalIndex)) {
+        return 0;
+    }
+
+    if (token[pos] != '\0') {
+        return 0;
+    }
+
+    *hasNormal = 1;
     return 1;
+}
+
+int parseObjIndex(char *token, int *value) {
+    int normalIndex;
+    int hasNormal;
+
+    /* Lee un indice de vertice y descarta vt/vn cuando se usa en lineas l. */
+    return parseObjFaceItem(token, value, &normalIndex, &hasNormal);
 }
 
 int convertObjIndex(int index, int vertexCount, int *zeroBased) {
@@ -281,16 +337,55 @@ int addVertex(struct Model *m, float x, float y, float z) {
     return 1;
 }
 
-int addTriangle(struct Model *m, int a, int b, int c) {
-    /* Guarda un triangulo ya convertido a indices base cero. */
-    if (m->triangleCount >= MAX_TRIANGLES) {
+int addNormal(struct Model *m, float x, float y, float z) {
+    float length;
+    int px;
+    int py;
+    int pz;
+
+    /* Guarda una normal OBJ normalizada y compactada. */
+    if (m->normalCount >= MAX_NORMALS) {
         return 0;
     }
 
-    m->triangles[m->triangleCount].a = a;
-    m->triangles[m->triangleCount].b = b;
-    m->triangles[m->triangleCount].c = c;
-    m->triangleCount++;
+    length = sqrt((x * x) + (y * y) + (z * z));
+    if (length < 0.001) {
+        return 0;
+    }
+
+    px = packNormalComponent(x / length);
+    py = packNormalComponent(y / length);
+    pz = packNormalComponent(z / length);
+
+    m->normals[m->normalCount].x = (signed char)px;
+    m->normals[m->normalCount].y = (signed char)py;
+    m->normals[m->normalCount].z = (signed char)pz;
+    m->normalCount++;
+    return 1;
+}
+
+int addFace(struct Model *m, int indices[], int count, int normal) {
+    int i;
+
+    /* Guarda la cara OBJ completa para no dividir cuadrados en triangulos. */
+    if (m->faceCount >= MAX_FACES) {
+        return 0;
+    }
+
+    if (count < 3 || m->faceRefCount + count > MAX_FACE_REFS) {
+        return 0;
+    }
+
+    m->faces[m->faceCount].start = m->faceRefCount;
+    m->faces[m->faceCount].count = count;
+    m->faces[m->faceCount].normal = normal;
+
+    for (i = 0; i < count; i++) {
+        m->faceRefs[m->faceRefCount] = indices[i];
+        m->faceRefCount++;
+    }
+
+    m->faceCount++;
     return 1;
 }
 
@@ -336,12 +431,95 @@ int parseVertexLine(struct Model *m, char *args, int lineNo) {
     return 1;
 }
 
+int parseNormalLine(struct Model *m, char *args, int lineNo) {
+    float x;
+    float y;
+    float z;
+    char extra[16];
+    int readCount;
+
+    /* Lee vn x y z; esta normal indica hacia donde mira la superficie. */
+    if (args == NULL) {
+        printf("ERROR linea %d: normal vn sin coordenadas.\n", lineNo);
+        return 0;
+    }
+
+    extra[0] = '\0';
+    readCount = sscanf(args, " %f %f %f %15s", &x, &y, &z, extra);
+    if (readCount != 3) {
+        printf("ERROR linea %d: formato de normal vn invalido.\n", lineNo);
+        return 0;
+    }
+
+    if (!addNormal(m, x, y, z)) {
+        printf("ERROR linea %d: demasiadas normales o normal nula. Limite: %d\n",
+               lineNo, MAX_NORMALS);
+        return 0;
+    }
+
+    return 1;
+}
+
+int readFaceItemList(char *args, int vertices[], int normals[],
+                     int normalPresent[], int *count, int lineNo,
+                     int vertexCount, int normalCount) {
+    char *token;
+    int rawVertex;
+    int rawNormal;
+    int zeroVertex;
+    int zeroNormal;
+    int hasNormal;
+
+    /* Lee una cara f conservando el indice vn cuando existe. */
+    if (args == NULL) {
+        printf("ERROR linea %d: lista de indices vacia.\n", lineNo);
+        return 0;
+    }
+
+    *count = 0;
+    token = strtok(args, " \t\r\n");
+    while (token != NULL) {
+        if (*count >= MAX_FACE_ITEMS) {
+            printf("ERROR linea %d: demasiados indices.\n", lineNo);
+            return 0;
+        }
+
+        if (!parseObjFaceItem(token, &rawVertex, &rawNormal, &hasNormal)) {
+            printf("ERROR linea %d: indice OBJ invalido: %s\n", lineNo, token);
+            return 0;
+        }
+
+        if (!convertObjIndex(rawVertex, vertexCount, &zeroVertex)) {
+            printf("ERROR linea %d: indice de vertice fuera de rango: %s\n",
+                   lineNo, token);
+            return 0;
+        }
+
+        zeroNormal = -1;
+        if (hasNormal) {
+            if (!convertObjIndex(rawNormal, normalCount, &zeroNormal)) {
+                printf("ERROR linea %d: indice de normal fuera de rango: %s\n",
+                       lineNo, token);
+                return 0;
+            }
+        }
+
+        vertices[*count] = zeroVertex;
+        normals[*count] = zeroNormal;
+        normalPresent[*count] = hasNormal;
+        (*count)++;
+        token = strtok(NULL, " \t\r\n");
+    }
+
+    return 1;
+}
+
 int readIndexList(char *args, int output[], int *count, int lineNo, int vertexCount) {
     char *token;
     int rawIndex;
     int zeroBased;
 
-    /* Lee una lista de indices usada por f o l. */
+    /* Lee una lista de indices usada por l. */
     if (args == NULL) {
         printf("ERROR linea %d: lista de indices vacia.\n", lineNo);
         return 0;
@@ -375,11 +553,14 @@ int readIndexList(char *args, int output[], int *count, int lineNo, int vertexCo
 
 int parseFaceLine(struct Model *m, char *args, int lineNo) {
     int indices[MAX_FACE_ITEMS];
+    int normalIndices[MAX_FACE_ITEMS];
+    int normalPresent[MAX_FACE_ITEMS];
     int count;
-    int i;
+    int faceNormal;
 
-    /* Convierte una cara de N vertices en triangulos tipo abanico. */
-    if (!readIndexList(args, indices, &count, lineNo, m->vertexCount)) {
+    /* Conserva cada f como una sola cara: triangulo, cuadrado o poligono. */
+    if (!readFaceItemList(args, indices, normalIndices, normalPresent, &count,
+                          lineNo, m->vertexCount, m->normalCount)) {
         return 0;
     }
 
@@ -388,12 +569,15 @@ int parseFaceLine(struct Model *m, char *args, int lineNo) {
         return 0;
     }
 
-    for (i = 1; i < count - 1; i++) {
-        if (!addTriangle(m, indices[0], indices[i], indices[i + 1])) {
-            printf("ERROR linea %d: demasiados triangulos. Limite: %d\n",
-                   lineNo, MAX_TRIANGLES);
-            return 0;
-        }
+    faceNormal = -1;
+    if (normalPresent[0]) {
+        faceNormal = normalIndices[0];
+    }
+
+    if (!addFace(m, indices, count, faceNormal)) {
+        printf("ERROR linea %d: demasiadas caras o indices. Limites: %d caras, %d indices\n",
+               lineNo, MAX_FACES, MAX_FACE_REFS);
+        return 0;
     }
 
     return 1;
@@ -432,7 +616,7 @@ int parseFloatLine(char *args, int minValues, int maxValues, int lineNo, char *l
     char extra[16];
     int readCount;
 
-    /* Valida vt/vn aunque el render actual no usa texturas ni normales. */
+    /* Valida vt aunque el render actual no usa texturas. */
     if (args == NULL) {
         printf("ERROR linea %d: %s sin valores.\n", lineNo, label);
         return 0;
@@ -478,8 +662,7 @@ int parseObjLine(struct Model *m, char *line, int lineNo) {
     }
 
     if (strcmp(keyword, "vn") == 0) {
-        m->ignoredCount++;
-        return parseFloatLine(args, 3, 3, lineNo, "normal vn");
+        return parseNormalLine(m, args, lineNo);
     }
 
     if (strcmp(keyword, "vt") == 0) {
@@ -492,7 +675,7 @@ int parseObjLine(struct Model *m, char *line, int lineNo) {
         strcmp(keyword, "s") == 0 ||
         strcmp(keyword, "usemtl") == 0 ||
         strcmp(keyword, "mtllib") == 0) {
-        /* Datos reconocidos pero no necesarios para pintar triangulos planos. */
+        /* Datos reconocidos pero no necesarios para pintar caras planas. */
         m->ignoredCount++;
         return 1;
     }
@@ -531,7 +714,7 @@ int loadObj(struct Model *m, char *path) {
         return 0;
     }
 
-    if (m->triangleCount < 1 && m->edgeCount < 1) {
+    if (m->faceCount < 1 && m->edgeCount < 1) {
         printf("ERROR: el OBJ no tiene caras f ni lineas l.\n");
         return 0;
     }
@@ -634,11 +817,22 @@ void worldToCamera(struct Vec3 point, float *x, float *y, float *z) {
     rotatePair(x, y, camera.roll);
 }
 
+void normalToCamera(struct Vec3 normal, float *x, float *y, float *z) {
+    /* Las normales solo rotan con la camara; no se trasladan como vertices. */
+    *x = normal.x;
+    *y = normal.y;
+    *z = normal.z;
+
+    rotatePair(x, z, camera.yaw);
+    rotatePair(y, z, camera.pitch);
+    rotatePair(x, y, camera.roll);
+}
+
 int projectCameraPoint(float x, float y, float z, int *screenX, int *screenY) {
     float factor;
 
-    /* Proyeccion perspectiva simple; no recorta parcialmente triangulos. */
-    if (z <= NEAR_CLIP) {
+    /* Proyeccion perspectiva simple; las caras se recortan antes si hace falta. */
+    if (z < NEAR_CLIP) {
         return 0;
     }
 
@@ -659,70 +853,344 @@ void projectAllVertices(struct Model *m) {
     }
 }
 
-int triangleFacesCamera(struct Triangle *tri) {
-    float ux;
-    float uy;
-    float vx;
-    float vy;
-    float normalZ;
-
-    /* Backface culling en espacio de camara: normal Z negativa mira a la camara. */
-    ux = cameraX[tri->b] - cameraX[tri->a];
-    uy = cameraY[tri->b] - cameraY[tri->a];
-    vx = cameraX[tri->c] - cameraX[tri->a];
-    vy = cameraY[tri->c] - cameraY[tri->a];
-    normalZ = (ux * vy) - (uy * vx);
-
-    return normalZ < -0.01;
+int getFaceVertex(struct Model *m, struct Face *face, int item) {
+    /* Devuelve el indice real del vertice dentro del arreglo compartido. */
+    return m->faceRefs[face->start + item];
 }
 
-void addRenderTriangle(struct Model *m, int triangleIndex) {
-    struct Triangle *tri;
-    struct RenderTriangle *item;
+int getObjNormalCamera(struct Model *m, struct Face *face,
+                       float *nx, float *ny, float *nz) {
+    struct Vec3 normal;
 
-    /* Prepara un triangulo visible para ordenarlo y pintarlo despues. */
-    if (renderCount >= MAX_TRIANGLES) {
+    /* Usa la normal vn del OBJ cuando la cara la trae. */
+    if (face->normal < 0 || face->normal >= m->normalCount) {
+        return 0;
+    }
+
+    normal.x = ((float)m->normals[face->normal].x) / 100.0;
+    normal.y = ((float)m->normals[face->normal].y) / 100.0;
+    normal.z = ((float)m->normals[face->normal].z) / 100.0;
+    normalToCamera(normal, nx, ny, nz);
+    return 1;
+}
+
+int getGeometryNormalCamera(struct Model *m, struct Face *face,
+                            float *nx, float *ny, float *nz) {
+    int a;
+    int b;
+    int c;
+    int i;
+    float ux;
+    float uy;
+    float uz;
+    float vx;
+    float vy;
+    float vz;
+    float length;
+
+    /* Calcula la normal desde tres vertices no colineales de la cara. */
+    a = getFaceVertex(m, face, 0);
+    for (i = 1; i < face->count - 1; i++) {
+        b = getFaceVertex(m, face, i);
+        c = getFaceVertex(m, face, i + 1);
+
+        ux = cameraX[b] - cameraX[a];
+        uy = cameraY[b] - cameraY[a];
+        uz = cameraZ[b] - cameraZ[a];
+        vx = cameraX[c] - cameraX[a];
+        vy = cameraY[c] - cameraY[a];
+        vz = cameraZ[c] - cameraZ[a];
+
+        *nx = (uy * vz) - (uz * vy);
+        *ny = (uz * vx) - (ux * vz);
+        *nz = (ux * vy) - (uy * vx);
+
+        length = sqrt((*nx * *nx) + (*ny * *ny) + (*nz * *nz));
+        if (length > 0.001) {
+            *nx = *nx / length;
+            *ny = *ny / length;
+            *nz = *nz / length;
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+int getFaceNormalCamera(struct Model *m, struct Face *face,
+                        float *nx, float *ny, float *nz) {
+    /* Prioriza la normal OBJ; si no existe, usa el orden de vertices. */
+    if (getObjNormalCamera(m, face, nx, ny, nz)) {
+        return 1;
+    }
+
+    return getGeometryNormalCamera(m, face, nx, ny, nz);
+}
+
+int faceFacesCamera(struct Model *m, struct Face *face) {
+    int i;
+    int index;
+    float nx;
+    float ny;
+    float nz;
+    float centerFaceX;
+    float centerFaceY;
+    float centerFaceZ;
+    float dot;
+
+    /*
+       Si normal . (camara - centroCara) es positivo, la normal apunta hacia
+       la camara. En espacio de camara la camara esta en 0,0,0.
+    */
+    if (!getFaceNormalCamera(m, face, &nx, &ny, &nz)) {
+        return 1;
+    }
+
+    centerFaceX = 0.0;
+    centerFaceY = 0.0;
+    centerFaceZ = 0.0;
+    for (i = 0; i < face->count; i++) {
+        index = getFaceVertex(m, face, i);
+        centerFaceX += cameraX[index];
+        centerFaceY += cameraY[index];
+        centerFaceZ += cameraZ[index];
+    }
+
+    centerFaceX = centerFaceX / face->count;
+    centerFaceY = centerFaceY / face->count;
+    centerFaceZ = centerFaceZ / face->count;
+    dot = (nx * -centerFaceX) + (ny * -centerFaceY) + (nz * -centerFaceZ);
+
+    return dot > 0.01;
+}
+
+int faceIntersectsNearPlane(struct Model *m, struct Face *face) {
+    int i;
+    int index;
+
+    /* Una cara se conserva si al menos un vertice queda delante del plano cercano. */
+    for (i = 0; i < face->count; i++) {
+        index = getFaceVertex(m, face, i);
+        if (cameraZ[index] >= NEAR_CLIP) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+void appendClipPoint(float xs[], float ys[], float zs[], int *count,
+                     float x, float y, float z) {
+    /* Agrega un punto recortado evitando desbordar el arreglo temporal. */
+    if (*count >= MAX_CLIPPED_POINTS) {
         return;
     }
 
-    tri = &m->triangles[triangleIndex];
-    if (!projectedOk[tri->a] || !projectedOk[tri->b] || !projectedOk[tri->c]) {
+    xs[*count] = x;
+    ys[*count] = y;
+    zs[*count] = z;
+    (*count)++;
+}
+
+void appendNearIntersection(float xs[], float ys[], float zs[], int *count,
+                            float ax, float ay, float az,
+                            float bx, float by, float bz) {
+    float t;
+    float x;
+    float y;
+
+    /* Intersecta una arista con z = NEAR_CLIP para no perder caras parciales. */
+    if (absFloat(bz - az) < 0.001) {
         return;
     }
 
-    if (!triangleFacesCamera(tri)) {
+    t = (NEAR_CLIP - az) / (bz - az);
+    x = ax + ((bx - ax) * t);
+    y = ay + ((by - ay) * t);
+    appendClipPoint(xs, ys, zs, count, x, y, NEAR_CLIP);
+}
+
+int clipFaceAgainstNear(struct Model *m, struct Face *face,
+                        float xs[], float ys[], float zs[]) {
+    float inX[MAX_FACE_ITEMS];
+    float inY[MAX_FACE_ITEMS];
+    float inZ[MAX_FACE_ITEMS];
+    int inCount;
+    int outCount;
+    int i;
+    int current;
+    int previous;
+    int currentInside;
+    int previousInside;
+
+    /* Recorte Sutherland-Hodgman contra el plano cercano de la camara. */
+    inCount = face->count;
+    for (i = 0; i < inCount; i++) {
+        current = getFaceVertex(m, face, i);
+        inX[i] = cameraX[current];
+        inY[i] = cameraY[current];
+        inZ[i] = cameraZ[current];
+    }
+
+    outCount = 0;
+    previous = inCount - 1;
+    previousInside = inZ[previous] >= NEAR_CLIP;
+    for (i = 0; i < inCount; i++) {
+        currentInside = inZ[i] >= NEAR_CLIP;
+
+        if (currentInside) {
+            if (!previousInside) {
+                appendNearIntersection(xs, ys, zs, &outCount,
+                                       inX[previous], inY[previous], inZ[previous],
+                                       inX[i], inY[i], inZ[i]);
+            }
+            appendClipPoint(xs, ys, zs, &outCount, inX[i], inY[i], inZ[i]);
+        } else if (previousInside) {
+            appendNearIntersection(xs, ys, zs, &outCount,
+                                   inX[previous], inY[previous], inZ[previous],
+                                   inX[i], inY[i], inZ[i]);
+        }
+
+        previous = i;
+        previousInside = currentInside;
+    }
+
+    return outCount;
+}
+
+int buildProjectedFace(struct Model *m, struct Face *face,
+                       int poly[], float *depth) {
+    float xs[MAX_CLIPPED_POINTS];
+    float ys[MAX_CLIPPED_POINTS];
+    float zs[MAX_CLIPPED_POINTS];
+    int count;
+    int i;
+    int sx;
+    int sy;
+
+    /* Recorta y proyecta una cara completa para fillpoly(). */
+    count = clipFaceAgainstNear(m, face, xs, ys, zs);
+    if (count < 3) {
+        return 0;
+    }
+
+    *depth = zs[0];
+    for (i = 0; i < count; i++) {
+        if (zs[i] < *depth) {
+            *depth = zs[i];
+        }
+
+        if (!projectCameraPoint(xs[i], ys[i], zs[i], &sx, &sy)) {
+            return 0;
+        }
+
+        poly[i * 2] = sx;
+        poly[(i * 2) + 1] = sy;
+    }
+
+    return count;
+}
+
+int polygonOutsideScreen(int poly[], int count) {
+    int i;
+    int x;
+    int y;
+    int minX;
+    int maxX;
+    int minY;
+    int maxY;
+
+    /* Descarta solo poligonos cuya caja completa queda fuera de pantalla. */
+    if (count < 1) {
+        return 1;
+    }
+
+    minX = poly[0];
+    maxX = poly[0];
+    minY = poly[1];
+    maxY = poly[1];
+
+    for (i = 1; i < count; i++) {
+        x = poly[i * 2];
+        y = poly[(i * 2) + 1];
+
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+    }
+
+    if (maxX < 0) return 1;
+    if (minX > screenW) return 1;
+    if (maxY < 0) return 1;
+    if (minY > screenH) return 1;
+
+    return 0;
+}
+
+void addRenderFace(struct Model *m, int faceIndex) {
+    struct Face *face;
+    struct RenderFace *item;
+    int poly[MAX_CLIPPED_POINTS * 2];
+    int pointCount;
+    float depth;
+
+    /* Prepara una cara visible para ordenarla y pintarla despues. */
+    if (renderCount >= MAX_FACES) {
+        return;
+    }
+
+    face = &m->faces[faceIndex];
+    if (!faceIntersectsNearPlane(m, face)) {
+        nearCulledCount++;
+        return;
+    }
+
+    if (!faceFacesCamera(m, face)) {
+        backfaceCulledCount++;
+        if (cullBackfaces) {
+            return;
+        }
+    }
+
+    pointCount = buildProjectedFace(m, face, poly, &depth);
+    if (pointCount < 3) {
+        nearCulledCount++;
+        return;
+    }
+
+    if (polygonOutsideScreen(poly, pointCount)) {
+        offscreenCulledCount++;
         return;
     }
 
     item = &renderList[renderCount];
-    item->triangleIndex = triangleIndex;
-    item->sx[0] = projectedX[tri->a];
-    item->sy[0] = projectedY[tri->a];
-    item->sx[1] = projectedX[tri->b];
-    item->sy[1] = projectedY[tri->b];
-    item->sx[2] = projectedX[tri->c];
-    item->sy[2] = projectedY[tri->c];
-    item->depth = (cameraZ[tri->a] + cameraZ[tri->b] + cameraZ[tri->c]) / 3.0;
-    item->color = triangleColors[triangleIndex % 12];
+    item->faceIndex = faceIndex;
+    item->depth = depth;
+    item->color = faceColors[faceIndex % 12];
     renderCount++;
 }
 
 void buildRenderList(struct Model *m) {
     int i;
 
-    /* Genera solo los triangulos proyectados y orientados hacia la camara. */
+    /* Genera solo caras proyectables y opcionalmente orientadas hacia la camara. */
     renderCount = 0;
-    for (i = 0; i < m->triangleCount; i++) {
-        addRenderTriangle(m, i);
+    backfaceCulledCount = 0;
+    offscreenCulledCount = 0;
+    nearCulledCount = 0;
+
+    for (i = 0; i < m->faceCount; i++) {
+        addRenderFace(m, i);
     }
 }
 
 void sortRenderList(void) {
     int i;
     int j;
-    struct RenderTriangle temp;
+    struct RenderFace temp;
 
-    /* Orden painter: primero los mas lejos, al final los cercanos. */
+    /* Orden painter: primero lo mas lejano, al final lo mas cercano. */
     for (i = 1; i < renderCount; i++) {
         temp = renderList[i];
         j = i - 1;
@@ -736,24 +1204,36 @@ void sortRenderList(void) {
     }
 }
 
-void drawFilledTriangle(struct RenderTriangle *item) {
-    int poly[6];
+void drawFilledFace(struct Model *m, struct RenderFace *item) {
+    struct Face *face;
+    int poly[MAX_CLIPPED_POINTS * 2];
+    int pointCount;
+    int i;
+    int next;
+    float depth;
 
-    /* Pinta el triangulo y luego marca su borde para ver la triangulacion. */
-    poly[0] = item->sx[0];
-    poly[1] = item->sy[0];
-    poly[2] = item->sx[1];
-    poly[3] = item->sy[1];
-    poly[4] = item->sx[2];
-    poly[5] = item->sy[2];
+    /* Pinta una cara completa: triangulo, cuadrado o poligono OBJ. */
+    face = &m->faces[item->faceIndex];
+    pointCount = buildProjectedFace(m, face, poly, &depth);
+    if (pointCount < 3) {
+        return;
+    }
 
     setfillstyle(SOLID_FILL, item->color);
-    fillpoly(3, poly);
+    fillpoly(pointCount, poly);
 
-    setcolor(BLACK);
-    line(poly[0], poly[1], poly[2], poly[3]);
-    line(poly[2], poly[3], poly[4], poly[5]);
-    line(poly[4], poly[5], poly[0], poly[1]);
+    if (showEdges) {
+        setcolor(BLACK);
+        for (i = 0; i < pointCount; i++) {
+            next = i + 1;
+            if (next >= pointCount) {
+                next = 0;
+            }
+
+            line(poly[i * 2], poly[(i * 2) + 1],
+                 poly[next * 2], poly[(next * 2) + 1]);
+        }
+    }
 }
 
 void drawExplicitEdges(struct Model *m) {
@@ -761,8 +1241,8 @@ void drawExplicitEdges(struct Model *m) {
     int a;
     int b;
 
-    /* Si el OBJ trae l, se dibujan encima de las caras coloreadas. */
-    if (m->edgeCount <= 0) {
+    /* Las lineas OBJ explicitas se muestran solo al activar bordes con L. */
+    if (!showEdges || m->edgeCount <= 0) {
         return;
     }
 
@@ -777,16 +1257,16 @@ void drawExplicitEdges(struct Model *m) {
     }
 }
 
-void drawSceneTriangles(struct Model *m) {
+void drawSceneFaces(struct Model *m) {
     int i;
 
-    /* Pinta de atras hacia adelante para que los cercanos tapen a los lejanos. */
+    /* Pinta de atras hacia adelante para que las caras cercanas tapen a las lejanas. */
     projectAllVertices(m);
     buildRenderList(m);
     sortRenderList();
 
     for (i = 0; i < renderCount; i++) {
-        drawFilledTriangle(&renderList[i]);
+        drawFilledFace(m, &renderList[i]);
     }
 
     drawExplicitEdges(m);
@@ -796,21 +1276,30 @@ void drawHud(void) {
     char line1[120];
     char line2[120];
     char line3[120];
+    char line4[120];
+    char edgeText[4];
+    char cullText[4];
 
     /* El HUD muestra posicion y orientacion actual de la camara. */
     setfillstyle(SOLID_FILL, BLACK);
-    bar(0, 0, screenW, 58);
+    bar(0, 0, screenW, 72);
 
+    strcpy(edgeText, showEdges ? "ON" : "OFF");
+    strcpy(cullText, cullBackfaces ? "ON" : "OFF");
     sprintf(line1, "OBJCOLOR  cam X:%6.1f Y:%6.1f Z:%6.1f",
             camera.x, camera.y, camera.z);
-    sprintf(line2, "yaw:%5.2f pitch:%5.2f roll:%5.2f  visibles:%d/%d",
-            camera.yaw, camera.pitch, camera.roll, renderCount, model.triangleCount);
-    sprintf(line3, "W/S avance  A/D lateral  Q/E vertical  Flechas rotan  Z/X roll  R reset");
+    sprintf(line2, "yaw:%5.2f pitch:%5.2f roll:%5.2f  caras:%d/%d",
+            camera.yaw, camera.pitch, camera.roll, renderCount, model.faceCount);
+    sprintf(line3, "desc atras:%d fuera:%d cerca:%d  VN:%d bordes:%s cull:%s",
+            backfaceCulledCount, offscreenCulledCount, nearCulledCount,
+            model.normalCount, edgeText, cullText);
+    sprintf(line4, "W/S A/D Q/E mover  Flechas rotan  Z/X roll  L bordes  B atras  R reset");
 
     setcolor(LIGHTGRAY);
     outtextxy(8, 8, line1);
     outtextxy(8, 22, line2);
     outtextxy(8, 36, line3);
+    outtextxy(8, 50, line4);
 }
 
 void initDoubleBufferPages(void) {
@@ -838,7 +1327,7 @@ void drawFrame(void) {
     setactivepage(activePage);
     setwritemode(COPY_PUT);
     cleardevice();
-    drawSceneTriangles(&model);
+    drawSceneFaces(&model);
     drawHud();
     flipDoubleBufferPage();
 }
@@ -912,6 +1401,14 @@ int handleInput(void) {
             changed = 1;
         } else if (key == 'x' || key == 'X') {
             camera.roll += ROT_STEP;
+            changed = 1;
+        } else if (key == 'l' || key == 'L') {
+            /* Permite comparar caras limpias contra bordes visibles. */
+            showEdges = !showEdges;
+            changed = 1;
+        } else if (key == 'b' || key == 'B') {
+            /* Permite comprobar si una cara falta por backface culling. */
+            cullBackfaces = !cullBackfaces;
             changed = 1;
         } else if (key == 'r' || key == 'R') {
             resetCamera();
