@@ -7,7 +7,7 @@
 #include <string.h>
 #include <ctype.h>
 
-#define OBJ_PATH "C:\\projects\\3D\\OBJ_TEST\\models\\sphere.obj"
+#define OBJ_PATH "C:\\projects\\3D\\OBJ_TEST\\models\\Tpose.obj"
 #define BGI_DIR "C:\\TURBOC3\\BGI"
 
 #define MAX_LINE 180
@@ -26,9 +26,9 @@
 #define MOVE_STEP 10.0
 #define ROT_STEP 0.050
 /* Direccion fija de los rayos del sol, en grados, sobre los ejes X/Y/Z. */
-#define SUN_ROT_X_DEG -35.0
-#define SUN_ROT_Y_DEG -25.0
-#define SUN_ROT_Z_DEG 0.0
+#define SUN_ROT_X_DEG 90.0
+#define SUN_ROT_Y_DEG 90.0
+#define SUN_ROT_Z_DEG 90.0
 #define DEG_TO_RAD 0.0174532925
 #define AMBIENT_LIGHT 0.18
 #define DIFFUSE_LIGHT 0.82
