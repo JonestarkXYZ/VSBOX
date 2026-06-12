@@ -12,22 +12,24 @@
    Cada seccion es una pista. Todas las pistas empiezan al mismo tiempo.
    La duracion es un divisor del pulso del tempo:
 
-       1 = pulso completo
-       2 = medio pulso
-       4 = cuarto de pulso
-       8 = octavo de pulso
-      16 = dieciseisavo de pulso
+       1 = redonda, cuatro beats
+       2 = blanca, dos beats
+       4 = negra, un beat del BPM
+       8 = corchea, medio beat
+      16 = semicorchea, cuarto de beat
 
    Frecuencia acepta notas musicales y valores numericos en Hz.
    El valor 0 o MUTE es silencio.
    El token LOOP dentro de una pista marca desde donde repetir cuando la
    cancion termina. Tambien se puede forzar bucle con LOOP_SONG.
    El sonido sale por Sound Blaster Direct DAC, unsigned 8-bit.
+   Al iniciar muestra una vista grafica tipo DAW para la pista Frecuencia.
 */
 
 #include <conio.h>
 #include <ctype.h>
 #include <dos.h>
+#include <graphics.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -48,23 +50,27 @@
 #define PIT_HZ              1193182UL
 
 #define SAMPLE_RATE         11025UL
-#define TEMPO_BPM           60
+#define TEMPO_BPM           30
 #define TEMPO_SPEED_PERCENT 100UL
 #define PITCH_CORRECT_PCT   100UL
 #define LOOP_SONG           0
+#define BEAT_NOTE_DIVISOR   1UL
 
 #define MAX_TRACKS          6
 #define MAX_EVENTS          384
+#define BGI_PATH            "C:\\TURBOC3\\BGI"
+#define DAW_MAX_NOTE_ROWS   28
+#define DAW_STEP_DIV        16UL
 #define NAME_LEN            16
 #define TOKEN_LEN           24
-#define DEFAULT_OCTAVE      6
-#define MAX_OCTAVE          8
+#define DEFAULT_OCTAVE      3
+#define MAX_OCTAVE          10
 #define PHASE_SCALE         65536UL
-#define RELEASE_SAMPLES     96UL
-#define ATTACK_SAMPLES      8UL
+#define RELEASE_SAMPLES     0UL //96
+#define ATTACK_SAMPLES      0UL //8
 #define ENABLE_CATCHUP      0
-#define MAX_CATCHUP_SAMPLES 96U
-#define FREQ_VOLUME         46U
+#define MAX_CATCHUP_SAMPLES 100U //96
+#define FREQ_VOLUME         100U //46
 #define KEY_ESC             27
 
 #define INST_PIANO          1
@@ -161,6 +167,10 @@ int parseTrackEvents(FILE *fp, MusicTrack *track);
 int loadMusicFromPath(const char *path);
 int loadMusicFile(const char *requestedPath);
 void printLoadedTracks(void);
+unsigned long trackLoopStartSamples(MusicTrack *track);
+int drawMusicTimeline(void);
+int findNoteAbsFromFreq(int freqHz, int *absNote);
+void noteNameFromAbs(int absNote, char *out);
 
 unsigned long durationToSamples(unsigned int durationDiv);
 unsigned long freqToStep(int freqHz);
@@ -207,8 +217,11 @@ void prepareTiming(void) {
     sampleStep = PIT_HZ / SAMPLE_RATE;
     sampleRemainderStep = PIT_HZ % SAMPLE_RATE;
 
-    /* TEMPO_SPEED_PERCENT permite ajustar velocidad sin cambiar afinacion.
-       100 = normal, 125 = 25% mas rapido, 80 = 20% mas lento. */
+    /* TEMPO_BPM mide negras por minuto. Con BEAT_NOTE_DIVISOR=4:
+       duracion 4 = una negra = un beat.
+       duracion 8 = corchea = medio beat.
+       duracion 16 = semicorchea = un cuarto de beat.
+       TEMPO_SPEED_PERCENT ajusta velocidad sin cambiar afinacion. */
     beatSamples = (SAMPLE_RATE * 60UL * 100UL) /
                   ((unsigned long)TEMPO_BPM * TEMPO_SPEED_PERCENT);
     if (beatSamples == 0UL) {
@@ -760,15 +773,317 @@ void printLoadedTracks(void) {
     }
 }
 
+unsigned long trackLoopStartSamples(MusicTrack *track) {
+    unsigned int i;
+    unsigned long total;
+
+    /* Convierte el marcador LOOP de eventos a posicion de muestra. */
+    total = 0UL;
+    if (!track->loopEnabled) {
+        return 0UL;
+    }
+
+    for (i = 0; i < track->loopStartIndex && i < track->eventCount; i++) {
+        total += durationToSamples(track->events[i].durationDiv);
+    }
+
+    return total;
+}
+
+int findNoteAbsFromFreq(int freqHz, int *absNote) {
+    int octave;
+    int noteIndex;
+    int bestAbs;
+    long bestDiff;
+    long diff;
+
+    /* Devuelve la nota cromatica mas cercana a una frecuencia. */
+    if (freqHz <= 0) {
+        return 0;
+    }
+
+    bestAbs = 0;
+    bestDiff = 2147483647L;
+
+    for (octave = 0; octave <= MAX_OCTAVE; octave++) {
+        for (noteIndex = 0; noteIndex < 12; noteIndex++) {
+            diff = (long)noteTable[octave][noteIndex] - (long)freqHz;
+            if (diff < 0L) {
+                diff = -diff;
+            }
+
+            if (diff < bestDiff) {
+                bestDiff = diff;
+                bestAbs = octave * 12 + noteIndex;
+            }
+        }
+    }
+
+    *absNote = bestAbs;
+    return 1;
+}
+
+void noteNameFromAbs(int absNote, char *out) {
+    static char *names[12] = {
+        "C", "CS", "D", "DS", "E", "F",
+        "FS", "G", "GS", "A", "AS", "B"
+    };
+    int octave;
+    int noteIndex;
+
+    /* Etiqueta corta compatible con el ancho del piano-roll. */
+    if (absNote < 0) {
+        strcpy(out, "?");
+        return;
+    }
+
+    octave = absNote / 12;
+    noteIndex = absNote % 12;
+    sprintf(out, "%s%d", names[noteIndex], octave);
+}
+
+int drawMusicTimeline(void) {
+    int gd;
+    int gm;
+    int graphError;
+    int t;
+    int r;
+    int x;
+    int y;
+    int x1;
+    int x2;
+    int y1;
+    int y2;
+    int noteAbs;
+    int minAbs;
+    int maxAbs;
+    int visibleMinAbs;
+    int visibleRows;
+    int row;
+    int rowH;
+    int left;
+    int top;
+    int right;
+    int bottom;
+    int drawW;
+    int maxX;
+    int maxY;
+    int foundTrack;
+    unsigned int e;
+    unsigned long stepSamples;
+    unsigned long stepLen;
+    unsigned long eventStep;
+    unsigned long totalSteps;
+    unsigned long startStep;
+    unsigned long endStep;
+    unsigned long loopStep;
+    unsigned long gridStep;
+    char label[16];
+    char info[80];
+    MusicTrack *track;
+    MusicEvent *event;
+
+    /* Busca la pista Frecuencia: esta vista DAW dibuja tonos, no bateria. */
+    track = NULL;
+    foundTrack = 0;
+    for (t = 0; t < trackCount; t++) {
+        if (tracks[t].instrument == INST_FREQ) {
+            track = &tracks[t];
+            foundTrack = 1;
+            break;
+        }
+    }
+
+    if (!foundTrack || track == NULL) {
+        return 0;
+    }
+
+    stepSamples = durationToSamples((unsigned int)DAW_STEP_DIV);
+    if (stepSamples == 0UL) {
+        stepSamples = 1UL;
+    }
+
+    minAbs = 9999;
+    maxAbs = -1;
+    totalSteps = 0UL;
+
+    for (e = 0; e < track->eventCount; e++) {
+        event = &track->events[e];
+        stepLen = (durationToSamples(event->durationDiv) +
+                   stepSamples - 1UL) / stepSamples;
+        if (stepLen == 0UL) {
+            stepLen = 1UL;
+        }
+        totalSteps += stepLen;
+
+        if (findNoteAbsFromFreq(event->freqHz, &noteAbs)) {
+            if (noteAbs < minAbs) {
+                minAbs = noteAbs;
+            }
+            if (noteAbs > maxAbs) {
+                maxAbs = noteAbs;
+            }
+        }
+    }
+
+    if (maxAbs < 0 || minAbs > maxAbs || totalSteps == 0UL) {
+        return 0;
+    }
+
+    visibleRows = maxAbs - minAbs + 1;
+    visibleMinAbs = minAbs;
+    if (visibleRows > DAW_MAX_NOTE_ROWS) {
+        visibleRows = DAW_MAX_NOTE_ROWS;
+        visibleMinAbs = maxAbs - DAW_MAX_NOTE_ROWS + 1;
+    }
+
+    gd = DETECT;
+    gm = 0;
+    initgraph(&gd, &gm, BGI_PATH);
+    graphError = graphresult();
+    if (graphError != grOk) {
+        printf("\nNo se pudo abrir modo grafico BGI: %s\n",
+               grapherrormsg(graphError));
+        printf("Ruta BGI usada: %s\n", BGI_PATH);
+        return 0;
+    }
+
+    setbkcolor(BLACK);
+    cleardevice();
+
+    maxX = getmaxx();
+    maxY = getmaxy();
+
+    left = 58;
+    top = 58;
+    right = maxX - 12;
+    drawW = right - left;
+    if (drawW < 80) {
+        drawW = 80;
+        right = left + drawW;
+    }
+
+    rowH = (maxY - top - 58) / visibleRows;
+    if (rowH > 12) {
+        rowH = 12;
+    }
+    if (rowH < 6) {
+        rowH = 6;
+    }
+
+    bottom = top + (visibleRows * rowH);
+
+    setcolor(WHITE);
+    outtextxy(12, 10, "MUSIC8 - Piano-roll grafico");
+    sprintf(info, "%s: %u eventos, %lu pasos de 1/16",
+            track->name, track->eventCount, totalSteps);
+    setcolor(LIGHTGRAY);
+    outtextxy(12, 28, info);
+    outtextxy(12, 42, "Filas=semitonos, horizontal=tiempo, bloques=notas");
+
+    /* Rejilla vertical: cada 4 pasos es una negra, cada 16 una barra. */
+    for (gridStep = 0UL; gridStep <= totalSteps; gridStep += 4UL) {
+        x = left + (int)((gridStep * (unsigned long)drawW) / totalSteps);
+        if ((gridStep % 16UL) == 0UL) {
+            setcolor(LIGHTBLUE);
+        } else {
+            setcolor(DARKGRAY);
+        }
+        line(x, top, x, bottom);
+    }
+    setcolor(LIGHTBLUE);
+    line(right, top, right, bottom);
+
+    /* Rejilla horizontal por semitono. */
+    for (r = 0; r <= visibleRows; r++) {
+        y = top + (r * rowH);
+        setcolor(DARKGRAY);
+        line(left, y, right, y);
+    }
+
+    /* Etiquetas de notas. */
+    for (r = 0; r < visibleRows; r++) {
+        noteAbs = maxAbs - r;
+        noteNameFromAbs(noteAbs, label);
+        setcolor(LIGHTGRAY);
+        outtextxy(18, top + (r * rowH) + 2, label);
+    }
+
+    /* Rectangulos de notas. */
+    eventStep = 0UL;
+    for (e = 0; e < track->eventCount; e++) {
+        event = &track->events[e];
+        stepLen = (durationToSamples(event->durationDiv) +
+                   stepSamples - 1UL) / stepSamples;
+        if (stepLen == 0UL) {
+            stepLen = 1UL;
+        }
+
+        if (findNoteAbsFromFreq(event->freqHz, &noteAbs) &&
+            noteAbs >= visibleMinAbs && noteAbs <= maxAbs) {
+            startStep = eventStep;
+            endStep = startStep + stepLen;
+
+            row = maxAbs - noteAbs;
+            x1 = left + (int)((startStep * (unsigned long)drawW) /
+                              totalSteps);
+            x2 = left + (int)((endStep * (unsigned long)drawW) /
+                              totalSteps) - 1;
+            y1 = top + (row * rowH) + 2;
+            y2 = top + ((row + 1) * rowH) - 3;
+
+            if (x2 < x1) {
+                x2 = x1;
+            }
+            if (y2 < y1) {
+                y2 = y1;
+            }
+
+            setfillstyle(SOLID_FILL, LIGHTCYAN);
+            bar(x1, y1, x2, y2);
+
+            if (x2 > x1 && y2 > y1) {
+                setcolor(WHITE);
+                rectangle(x1, y1, x2, y2);
+            }
+        }
+
+        eventStep += (unsigned long)stepLen;
+    }
+
+    /* Marcador vertical de LOOP. */
+    if (track->loopEnabled) {
+        loopStep = (trackLoopStartSamples(track) + stepSamples - 1UL) /
+                   stepSamples;
+        if (loopStep <= totalSteps) {
+            x = left + (int)((loopStep * (unsigned long)drawW) /
+                             totalSteps);
+            setcolor(YELLOW);
+            line(x, top, x, bottom);
+            outtextxy(x + 3, bottom + 8, "LOOP");
+        }
+    }
+
+    setcolor(LIGHTGRAY);
+    outtextxy(12, bottom + 28,
+              "Rectangulos reales, no ASCII. Presiona una tecla...");
+    getch();
+    closegraph();
+    clrscr();
+    return 1;
+}
+
 unsigned long durationToSamples(unsigned int durationDiv) {
     unsigned long samples;
 
-    /* La duracion es una division del pulso definido por TEMPO_BPM. */
+    /* Notacion musical por denominador:
+       4 es una negra y equivale a un beat del BPM. */
     if (durationDiv == 0U) {
-        durationDiv = 1U;
+        durationDiv = (unsigned int)BEAT_NOTE_DIVISOR;
     }
 
-    samples = beatSamples / (unsigned long)durationDiv;
+    samples = (beatSamples * BEAT_NOTE_DIVISOR) /
+              (unsigned long)durationDiv;
     if (samples == 0UL) {
         samples = 1UL;
     }
@@ -1255,6 +1570,7 @@ int main(int argc, char *argv[]) {
     int loadResult;
     int playResult;
     int checkMode;
+    int timelineShown;
     char *requestedPath;
     int argIndex;
 
@@ -1264,6 +1580,7 @@ int main(int argc, char *argv[]) {
     printf("VSBOX - Musica 8-bit escrita a mano\n\n");
 
     checkMode = 0;
+    timelineShown = 0;
     requestedPath = NULL;
 
     /* Argumentos simples: MUSIC8.EXE [archivo] [CHECK]. */
@@ -1301,9 +1618,15 @@ int main(int argc, char *argv[]) {
         return 0;
     }
 
+    timelineShown = drawMusicTimeline();
+
     printf("\nESC cancela la reproduccion.\n");
-    printf("Presiona una tecla para iniciar...");
-    getch();
+    if (!timelineShown) {
+        printf("Presiona una tecla para iniciar...");
+        getch();
+    } else {
+        printf("Iniciando reproduccion...\n");
+    }
 
     if (!sbReset()) {
         printf("\nNo se detecto Sound Blaster en 0x220.\n");

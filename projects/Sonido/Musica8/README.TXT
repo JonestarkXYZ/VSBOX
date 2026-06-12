@@ -5,20 +5,20 @@ Objetivo
 --------
 
 Reproducir musica 8-bit escrita a mano dentro de DOSBox usando Turbo C 3 y
-Sound Blaster Direct DAC.
+Sound Blaster Direct DAC. El programa lee MUSIC.TXT, mezcla las pistas en
+tiempo real y muestra una vista grafica tipo DAW para la pista Frecuencia.
 
 Archivos
 --------
 
 - MUSIC8.C
-  Reproductor, parser, tabla de frecuencias e instrumentos.
+  Reproductor, parser, tabla de frecuencias, instrumentos y vista grafica.
 
 - MUSIC.TXT
-  Cancion editable en texto plano. Ahora contiene una pista Frecuencia con
-  notas musicales directas.
+  Cancion editable en texto plano.
 
 - DEMO.TXT
-  Ejemplo anterior con Piano, Bajo y Bateria.
+  Ejemplo con Piano, Bajo y Bateria.
 
 Formato de MUSIC.TXT
 --------------------
@@ -77,10 +77,6 @@ En una pista Frecuencia puedes mezclar notas y Hz:
 
 Frecuencia[D7,4,MUTE,8,3136,8,A7,4]
 
-La pista Frecuencia usa el tono directo de la nota o del numero escrito. Para
-evitar el sonido roto de la onda cuadrada en notas altas, el programa la
-reproduce con onda cuadrada suavizada y una entrada/salida corta contra clicks.
-
 Loop desde MUSIC.TXT
 -------------------
 
@@ -106,26 +102,36 @@ activa, esa pista vuelve desde el inicio.
 Duracion y tempo
 ----------------
 
-La duracion divide un pulso del tempo:
+La duracion usa denominadores de notacion musical. El BPM mide negras por
+minuto, por eso `4` equivale a un beat del tempo:
 
-1  = pulso completo
-2  = medio pulso
-3  = un tercio de pulso
-4  = un cuarto de pulso
-8  = un octavo de pulso
-16 = un dieciseisavo de pulso
+1  = redonda, cuatro beats
+2  = blanca, dos beats
+4  = negra, un beat
+8  = corchea, medio beat
+16 = semicorchea, un cuarto de beat
+
+Ejemplo a 60 BPM:
+
+4  = 1000 ms
+8  = 500 ms
+16 = 250 ms
 
 El tempo se cambia en MUSIC8.C:
 
-#define TEMPO_BPM 120
+#define TEMPO_BPM 60
+
+La constante que define que la negra es el beat es:
+
+#define BEAT_NOTE_DIVISOR 4UL
 
 La salida de audio se cambia en MUSIC8.C:
 
 #define SAMPLE_RATE 11025UL
 
 Con Sound Blaster Direct DAC no siempre conviene subir este valor. Si DOSBox no
-alcanza a enviar las muestras a tiempo, las notas suenan mas graves y la musica
-se vuelve lenta.
+alcanza a enviar las muestras a tiempo, las notas pueden sonar graves o la
+musica puede sentirse lenta.
 
 La velocidad se puede ajustar sin cambiar la afinacion:
 
@@ -139,11 +145,27 @@ La afinacion se puede corregir sin tocar MUSIC.TXT:
 
 Si todo suena grave, prueba 125, 150 o 200. Si todo suena agudo, baja el valor.
 
-El bucle se cambia en MUSIC8.C:
+El bucle global se cambia en MUSIC8.C:
 
 #define LOOP_SONG 0
 
-Usa 1 para repetir en bucle y 0 para reproducir una sola vez.
+Usa 1 para repetir en bucle y 0 para reproducir una sola vez. Si MUSIC.TXT
+tiene un token LOOP, el bucle queda activo aunque LOOP_SONG sea 0.
+
+Vista grafica tipo DAW
+----------------------
+
+Al iniciar, MUSIC8.C muestra un piano-roll grafico con BGI para la primera
+pista Frecuencia encontrada:
+
+- Cada fila representa un semitono.
+- El eje horizontal representa el tiempo.
+- Cada rectangulo representa una nota sostenida.
+- Los silencios dejan espacio vacio.
+- La linea amarilla marca LOOP si existe.
+
+La escala horizontal se comprime para entrar en pantalla. Si la cancion es
+larga, las notas se ven como bloques o pixeles pequenos, pero no como ASCII.
 
 Instrumentos
 ------------
@@ -170,8 +192,7 @@ Desde Linux:
 
 ./tools/build-linux.sh "projects/Sonido/Musica8/MUSIC8.C"
 
-Para validar el archivo sin reproducir audio, ejecuta el EXE con CHECK dentro
-de DOSBox:
+Para validar el archivo sin abrir la vista grafica ni reproducir audio:
 
 MUSIC8.EXE CHECK
 
@@ -195,9 +216,9 @@ tercera ruta.
 Notas tecnicas
 --------------
 
-El audio se mezcla en tiempo real a 11025 Hz, unsigned 8-bit mono. Direct DAC
-es simple y facil de depurar, pero consume CPU porque se escribe muestra por
-muestra.
+La reproduccion actual usa mezcla en tiempo real. No depende de archivos de
+audio pre-renderizados ni de cache temporal.
 
-Si necesitas probar mas calidad, sube SAMPLE_RATE a 16000UL. Si al hacerlo las
-notas bajan de tono, vuelve a 11025UL o sube PITCH_CORRECT_PCT.
+Si una cancion con muchas pistas se siente lenta, baja SAMPLE_RATE o simplifica
+los instrumentos de percusion. El modo Direct DAC obliga a enviar cada muestra
+al DSP en tiempo real, por eso el costo de CPU afecta el tempo percibido.
