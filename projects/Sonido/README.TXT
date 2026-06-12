@@ -16,6 +16,9 @@ Estructura
 - Reproducir sonido/
   Programa C para DOSBox que reproduce SOUND.RAW usando Sound Blaster.
 
+- Musica8/
+  Reproductor C para musica 8-bit escrita a mano con MUSIC.TXT.
+
 Formato usado
 -------------
 

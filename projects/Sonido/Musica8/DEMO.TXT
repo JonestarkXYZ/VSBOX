@@ -1,0 +1,30 @@
+// DEMO.TXT
+//
+// Ejemplo completo con Piano, Bajo y Bateria.
+// Ejecutar dentro de DOSBox:
+//
+// MUSIC8.EXE DEMO.TXT
+
+Piano[
+    // Melodia de ejemplo basada en el formato inicial.
+    D7,4,MUTE,8,G7,8,FS7,8,E7,8,D7,4,MUTE,8,
+    B6,4,MUTE,8,C7,8,D7,8,E7,8,A6,8,B6,8,C7,8,
+    B6,4,MUTE,8,D7,4,MUTE,8,
+
+    D7,4,MUTE,8,G7,8,FS7,8,E7,8,D7,4,MUTE,8,
+    G7,4,MUTE,8,G7,8,A7,8,G7,8,FS7,8,E7,8,FS7,8,G7,4
+]
+
+Bajo[
+    D3,2,MUTE,4,D3,4,G2,2,MUTE,4,G2,4,
+    B2,2,MUTE,4,B2,4,A2,2,MUTE,4,A2,4,
+    D3,2,MUTE,4,D3,4,G2,2,MUTE,4,G2,4,
+    G2,2,MUTE,4,G2,4,D3,2,MUTE,4,D3,4
+]
+
+Bateria[
+    KICK,4,HAT,8,SNARE,4,HAT,8,KICK,4,HAT,8,SNARE,4,HAT,8,
+    KICK,4,HAT,8,SNARE,4,HAT,8,KICK,4,HAT,8,SNARE,4,HAT,8,
+    KICK,4,HAT,8,SNARE,4,HAT,8,KICK,4,HAT,8,SNARE,4,HAT,8,
+    KICK,4,HAT,8,SNARE,4,HAT,8,KICK,4,HAT,8,SNARE,4,HAT,8
+]
