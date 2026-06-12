@@ -7,7 +7,7 @@
 #include <string.h>
 #include <ctype.h>
 
-#define OBJ_PATH "C:\\projects\\3D\\OBJ_TEST\\models\\Tpose.obj"
+#define OBJ_PATH "C:\\projects\\3D\\OBJ_TEST\\models\\Cono.obj"
 #define BGI_DIR "C:\\TURBOC3\\BGI"
 
 #define MAX_LINE 180
