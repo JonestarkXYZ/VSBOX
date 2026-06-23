@@ -50,7 +50,7 @@
 #define PIT_HZ              1193182UL
 
 #define SAMPLE_RATE         11025UL
-#define TEMPO_BPM           30
+#define TEMPO_BPM           50
 #define TEMPO_SPEED_PERCENT 100UL
 #define PITCH_CORRECT_PCT   100UL
 #define LOOP_SONG           0
@@ -63,14 +63,14 @@
 #define DAW_STEP_DIV        16UL
 #define NAME_LEN            16
 #define TOKEN_LEN           24
-#define DEFAULT_OCTAVE      3
+#define DEFAULT_OCTAVE      4
 #define MAX_OCTAVE          10
 #define PHASE_SCALE         65536UL
 #define RELEASE_SAMPLES     0UL //96
 #define ATTACK_SAMPLES      0UL //8
 #define ENABLE_CATCHUP      0
 #define MAX_CATCHUP_SAMPLES 100U //96
-#define FREQ_VOLUME         100U //46
+#define FREQ_VOLUME         50U //46
 #define KEY_ESC             27
 
 #define INST_PIANO          1
